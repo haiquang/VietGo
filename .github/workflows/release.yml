@@ -1,0 +1,66 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build & Publish macOS Release
+    runs-on: macos-15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Select Xcode / Swift 6 toolchain
+        run: |
+          if ! swift --version | grep -q 'Swift version 6'; then
+            LATEST_XCODE="$(ls -d /Applications/Xcode_16*.app 2>/dev/null | sort -V | tail -n 1 || true)"
+            if [[ -n "$LATEST_XCODE" ]]; then
+              sudo xcode-select -s "$LATEST_XCODE"
+            fi
+          fi
+          swift --version
+
+      - name: Run unit tests
+        run: swift test
+
+      - name: Package release artifacts
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            RELEASE_TAG="$GITHUB_REF_NAME"
+            REL_VER="${RELEASE_TAG#v}"
+          else
+            REL_VER="$(tr -d '[:space:]' < VERSION)"
+            RELEASE_TAG="v${REL_VER}"
+          fi
+          echo "RELEASE_TAG=${RELEASE_TAG}" >> "$GITHUB_ENV"
+          echo "REL_VER=${REL_VER}" >> "$GITHUB_ENV"
+          VIETGO_VERSION="$REL_VER" bash scripts/package_release.sh
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          DMG="dist/VietGo-v${REL_VER}-macos-arm64.dmg"
+          ZIP="dist/VietGo-v${REL_VER}-macos-arm64.zip"
+          SUMS="dist/SHA256SUMS.txt"
+          NOTES_FILE="docs/releases/${RELEASE_TAG}.md"
+
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" "$DMG" "$ZIP" "$SUMS" --clobber
+            if [[ -f "$NOTES_FILE" ]]; then
+              gh release edit "$RELEASE_TAG" --title "VietGo ${RELEASE_TAG}" --notes-file "$NOTES_FILE"
+            fi
+          else
+            if [[ -f "$NOTES_FILE" ]]; then
+              gh release create "$RELEASE_TAG" "$DMG" "$ZIP" "$SUMS" --title "VietGo ${RELEASE_TAG}" --notes-file "$NOTES_FILE"
+            else
+              gh release create "$RELEASE_TAG" "$DMG" "$ZIP" "$SUMS" --title "VietGo ${RELEASE_TAG}" --generate-notes
+            fi
+          fi
