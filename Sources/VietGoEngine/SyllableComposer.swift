@@ -28,10 +28,12 @@ public enum SyllableComposer {
     public struct ComposeResult: Equatable, Sendable {
         public let characters: [Character]
         public let isEscaped: Bool
+        public let didAutoRestore: Bool
 
-        public init(characters: [Character], isEscaped: Bool) {
+        public init(characters: [Character], isEscaped: Bool, didAutoRestore: Bool = false) {
             self.characters = characters
             self.isEscaped = isEscaped
+            self.didAutoRestore = didAutoRestore
         }
     }
 
@@ -55,6 +57,8 @@ public enum SyllableComposer {
         var onsetChars: [Character] = []
         var hasStrokeD = false
         var hadLongDistanceDStroke = false
+        var hadToneSwitch = false
+        var hadInitialStandaloneW = false
         var vowels: [VowelSlot] = []
         var codaChars: [Character] = []
         var tone: Tone = .none
@@ -65,6 +69,7 @@ public enum SyllableComposer {
         var escapedBaseLength = 0
         var escapedHasPostTrailingContent = false
         var escapedExtraTriggerRepeats = 0
+        var telexToneEscapeHadValidVietnamese = true
         var ooEscapeRawIndex: Int?
         var currentRawIndex = 0
 
@@ -159,10 +164,12 @@ public enum SyllableComposer {
                    vowels: vowels,
                    codaChars: codaChars,
                    tone: tone,
-                   rawKeys: rawKeys,
+                   rawKeys: Array(rawKeys.prefix(currentRawIndex)),
                    inputMethod: config.inputMethod,
                    isFinalizingWord: false,
-                   hadLongDistanceDStroke: hadLongDistanceDStroke
+                   hadLongDistanceDStroke: hadLongDistanceDStroke,
+                   hadToneSwitch: hadToneSwitch,
+                   hadInitialStandaloneW: hadInitialStandaloneW
                ) {
                 return false
             }
@@ -251,6 +258,9 @@ public enum SyllableComposer {
             // Guard against invalid circumflex combinations in Telex/VNI
             if targetShape == .circumflex {
                 let targetBase = vowels[idx].base
+                if config.inputMethod == .telex && targetBase == "a" && vowels[idx].shape == .breve && vowels[idx].explicitShape {
+                    return false
+                }
                 if targetBase == "a", idx > 0 {
                     let prev = vowels[idx - 1]
                     // `ưâ`, `iâ`, `oâ`, `eâ`, `yâ`, `aâ` do not exist in Vietnamese (only plain `u` + `â` in `uân`, `uất`)
@@ -325,6 +335,24 @@ public enum SyllableComposer {
             if newTone != .none,
                case .tone(let prevTone, let firstTrigger) = lastAction,
                prevTone == newTone {
+                // Record whether the first tone tap produced a phonotactically valid Vietnamese syllable (`ass` -> `á`),
+                // vs an unrendered invalid prefix (`yes` -> `yes`, where double-tapping `s` means literal `yess`).
+                if config.autoRestoreEnglish {
+                    telexToneEscapeHadValidVietnamese = isPhonotacticallyValid(
+                        onsetChars: onsetChars,
+                        vowels: vowels,
+                        codaChars: codaChars,
+                        tone: tone,
+                        rawKeys: Array(rawKeys.prefix(currentRawIndex)),
+                        inputMethod: config.inputMethod,
+                        isFinalizingWord: false,
+                        hadLongDistanceDStroke: hadLongDistanceDStroke,
+                        hadToneSwitch: hadToneSwitch,
+                        hadInitialStandaloneW: hadInitialStandaloneW
+                    )
+                } else {
+                    telexToneEscapeHadValidVietnamese = true
+                }
                 // Adjacent double-tap tone escape (e.g. `ass` -> `as`, `a11` -> `a1`)
                 tone = .none
                 if config.inputMethod == .telex {
@@ -350,9 +378,12 @@ public enum SyllableComposer {
                 vowels: vowels,
                 codaChars: codaChars,
                 tone: tone,
-                rawKeys: rawKeys,
+                rawKeys: Array(rawKeys.prefix(currentRawIndex)),
                 inputMethod: config.inputMethod,
-                isFinalizingWord: false
+                isFinalizingWord: false,
+                hadLongDistanceDStroke: hadLongDistanceDStroke,
+                hadToneSwitch: hadToneSwitch,
+                hadInitialStandaloneW: hadInitialStandaloneW
             ) {
                 return false
             }
@@ -360,6 +391,7 @@ public enum SyllableComposer {
             if newTone == .none {
                 if tone != .none {
                     tone = .none
+                    hadToneSwitch = false
                     lastAction = .none
                     return true
                 }
@@ -371,6 +403,9 @@ public enum SyllableComposer {
                 return false
             }
 
+            if tone != .none && newTone != .none && tone != newTone {
+                hadToneSwitch = true
+            }
             tone = newTone
             lastAction = .tone(newTone, trigger: triggerChar)
             return true
@@ -397,7 +432,7 @@ public enum SyllableComposer {
             }
 
             if config.autoRestoreEnglish && rawIdx >= 48 && escapeOrigin == nil {
-                return ComposeResult(characters: rawKeys, isEscaped: false)
+                return ComposeResult(characters: rawKeys, isEscaped: false, didAutoRestore: true)
             }
 
             let lower = Character(String(rawChar).lowercased())
@@ -525,6 +560,9 @@ public enum SyllableComposer {
                                 structuralFailure = true
                                 break
                             }
+                        }
+                        if onsetChars.isEmpty {
+                            hadInitialStandaloneW = true
                         }
                         vowels.append(VowelSlot(base: "u", shape: .horn, isUppercase: isUpper, explicitShape: true))
                         lastAction = .standaloneW(trigger: rawChar)
@@ -676,7 +714,7 @@ public enum SyllableComposer {
         }
 
         if structuralFailure {
-            return ComposeResult(characters: unconsumedRawKeys(), isEscaped: ooEscapeRawIndex != nil)
+            return ComposeResult(characters: unconsumedRawKeys(), isEscaped: ooEscapeRawIndex != nil, didAutoRestore: true)
         }
 
         if let origin = escapeOrigin {
@@ -685,18 +723,29 @@ public enum SyllableComposer {
                 return ComposeResult(characters: escapedDisplay, isEscaped: true)
             case .telexToneConsonant:
                 let unconsumed = unconsumedRawKeys()
-                // Geminate English tone consonants (`password`, `message`, `coffee`, `error`, `traffic`) restore raw keys
-                // only when lexical disambiguation prefers the double-consonant form over the single-consonant escaped form
-                // (`dessign -> design`, `losse -> lose`, `usser -> user`, `ressult -> result`).
-                if config.autoRestoreEnglish &&
-                    escapedHasPostTrailingContent &&
-                    escapedExtraTriggerRepeats == 0 &&
-                    shouldRestoreGeminateToneWord(
-                        escaped: escapedDisplay,
-                        raw: unconsumed,
-                        escapedBaseLength: escapedBaseLength
-                    ) {
-                    return ComposeResult(characters: unconsumed, isEscaped: true)
+                // Geminate English tone consonants (`password`, `message`, `coffee`, `error`, `traffic`, `less`, `mess`, `boss`, `swiss`, `tariff`)
+                // restore raw keys when lexical disambiguation prefers the double-consonant form over the single-consonant escaped form.
+                if config.autoRestoreEnglish {
+                    if !telexToneEscapeHadValidVietnamese && !escapedHasPostTrailingContent {
+                        return ComposeResult(characters: unconsumed, isEscaped: true, didAutoRestore: true)
+                    }
+                    if escapedExtraTriggerRepeats == 0 {
+                        if escapedHasPostTrailingContent {
+                            if shouldRestoreGeminateToneWord(
+                                escaped: escapedDisplay,
+                                raw: unconsumed,
+                                escapedBaseLength: escapedBaseLength
+                            ) {
+                                return ComposeResult(characters: unconsumed, isEscaped: true, didAutoRestore: true)
+                            }
+                        } else if unconsumed.count >= 4 {
+                            let escapedHasNonASCII = escapedDisplay.contains { !$0.isASCII }
+                            let rawValid = isValidEnglishWord(String(unconsumed), allowProperNounFallback: escapedHasNonASCII)
+                            if rawValid && (escapedHasNonASCII || !isValidEnglishWord(String(escapedDisplay))) {
+                                return ComposeResult(characters: unconsumed, isEscaped: true, didAutoRestore: true)
+                            }
+                        }
+                    }
                 }
                 return ComposeResult(characters: escapedDisplay, isEscaped: true)
             }
@@ -711,9 +760,11 @@ public enum SyllableComposer {
                 rawKeys: rawKeys,
                 inputMethod: config.inputMethod,
                 isFinalizingWord: isFinalizingWord,
-                hadLongDistanceDStroke: hadLongDistanceDStroke
+                hadLongDistanceDStroke: hadLongDistanceDStroke,
+                hadToneSwitch: hadToneSwitch,
+                hadInitialStandaloneW: hadInitialStandaloneW
             ) {
-                return ComposeResult(characters: unconsumedRawKeys(), isEscaped: ooEscapeRawIndex != nil)
+                return ComposeResult(characters: unconsumedRawKeys(), isEscaped: ooEscapeRawIndex != nil, didAutoRestore: true)
             }
         }
 
@@ -787,13 +838,17 @@ public enum SyllableComposer {
         #endif
     }
 
-    private static func isValidEnglishWord(_ word: String) -> Bool {
+    internal static func isKnownEnglishToken(_ word: String) -> Bool {
+        isValidEnglishWord(word)
+    }
+
+    private static func isValidEnglishWord(_ word: String, allowProperNounFallback: Bool = false) -> Bool {
         guard word.count >= 3,
               let subwords = splitIdentifierSubwords(word) else {
             return false
         }
 
-        let cacheKey = subwords.joined(separator: "|") as NSString
+        let cacheKey = "\(subwords.joined(separator: "|"))#\(allowProperNounFallback ? 1 : 0)" as NSString
         if let cached = spellCache.object(forKey: cacheKey) {
             return cached.boolValue
         }
@@ -809,9 +864,14 @@ public enum SyllableComposer {
                 valid = false
                 break
             }
+            // Reject 3-letter loan/abbreviation false positives so `less`, `loss`, `pass`, `miss` restore cleanly
+            if sub == "les" || sub == "los" || sub == "pas" || sub == "mis" {
+                valid = false
+                break
+            }
             #if canImport(AppKit)
             let checkBlock: () -> NSRange = {
-                NSSpellChecker.shared.checkSpelling(
+                let r = NSSpellChecker.shared.checkSpelling(
                     of: sub,
                     startingAt: 0,
                     language: "en_US",
@@ -819,6 +879,18 @@ public enum SyllableComposer {
                     inSpellDocumentWithTag: 0,
                     wordCount: nil
                 )
+                if r.location != NSNotFound && allowProperNounFallback, let first = sub.first {
+                    let capitalized = String(first).uppercased() + sub.dropFirst()
+                    return NSSpellChecker.shared.checkSpelling(
+                        of: capitalized,
+                        startingAt: 0,
+                        language: "en_US",
+                        wrap: false,
+                        inSpellDocumentWithTag: 0,
+                        wordCount: nil
+                    )
+                }
+                return r
             }
             let range = Thread.isMainThread ? checkBlock() : DispatchQueue.main.sync(execute: checkBlock)
             if range.location != NSNotFound {
@@ -893,7 +965,9 @@ public enum SyllableComposer {
         rawKeys: [Character],
         inputMethod: InputMethod,
         isFinalizingWord: Bool,
-        hadLongDistanceDStroke: Bool = false
+        hadLongDistanceDStroke: Bool = false,
+        hadToneSwitch: Bool = false,
+        hadInitialStandaloneW: Bool = false
     ) -> Bool {
         let onsetLower = String(onsetChars).lowercased()
         let codaLower = String(codaChars).lowercased()
@@ -1021,6 +1095,16 @@ public enum SyllableComposer {
 
         // Guard against long-distance `d...d` stroke on valid 5+ char English words (`defend`, `defends`, etc.)
         if hadLongDistanceDStroke && rawKeys.count >= 5 && isValidEnglishWord(rawLower) {
+            return false
+        }
+
+        // Guard against tone-switch overwrite on valid 4+ char English words (`virus`, `terms`, `turns`, `surf`, `turf`, `dwarf`)
+        if inputMethod == .telex && hadToneSwitch && rawKeys.count >= 4 && isValidEnglishWord(rawLower) {
+            return false
+        }
+
+        // Guard against word-initial standalone `w` -> `ư` on valid 3+ char English words (`was`, `war`, `wax`, `won`, `woo`, `wow`, `worm`, `worn`)
+        if inputMethod == .telex && hadInitialStandaloneW && rawKeys.count >= 3 && isValidEnglishWord(rawLower) {
             return false
         }
 

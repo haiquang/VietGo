@@ -725,12 +725,13 @@ public final class EventTapManager: ObservableObject {
 
         // Handle Backspace (supports post-Space recovery & tone re-placement on coda deletion)
         if keyCode == 51 {
+            let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
             let targetBundle = activeTargetBundleID
             let decomposeAcuteY = requiresDecomposedAcuteY(targetBundle)
             let previousLast = decomposeAcuteY ? engine.lastDisplayedCharacter : nil
             let previousDisplayed = decomposeAcuteY ? Array(engine.currentWord) : nil
 
-            switch engine.handleBackspace() {
+            switch engine.handleBackspace(allowToneReposition: !isRepeat) {
             case .passThrough:
                 if decomposeAcuteY, let previousLast, isNonMacRomanLatin1Vowel(previousLast) {
                     injectReplacement(backspaceCount: 2, text: "", useAutocompleteFix: false, proxy: proxy)

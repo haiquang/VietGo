@@ -834,4 +834,157 @@ final class VietGoEngineTests: XCTestCase {
             XCTAssertEqual(simulateTyping(input).output, expected, "Failed URL/path case: \(input)")
         }
     }
+
+    func testRound4ParagraphBackspaceEnglishGeminatesAndWCombinations() {
+        // 1. Long mixed Vietnamese + English paragraph: typing then deleting EVERY character backward
+        // must shrink monotonically by exact 1 char per step with zero jumps or English mutations.
+        let paragraphInput = "Hoom nay tooi kieemr tra booj gox VietGo vowis nhieeuf twf tieengs Anh nhw window refresh defend texts tests work virus away less boss yess was war won worm ddwocj giwx nguyen khong nhayr chuwx! "
+        let expectedParagraph = "Hôm nay tôi kiểm tra bộ gõ VietGo với nhiều từ tiếng Anh như window refresh defend texts tests work virus away less boss yess was war won worm được giữ nguyen khong nhảy chữ! "
+
+        var engine = VietInputEngine()
+        var screen: [Character] = []
+        for ch in paragraphInput {
+            switch engine.processKey(ch) {
+            case .passThrough:
+                screen.append(ch)
+            case .replace(let bs, let text):
+                screen.removeLast(min(bs, screen.count))
+                screen.append(contentsOf: text)
+            }
+        }
+        XCTAssertEqual(String(screen).precomposedStringWithCanonicalMapping, expectedParagraph)
+
+        // Protect every English token range against non-trivial backspace mutation
+        let fullStr = String(screen).precomposedStringWithCanonicalMapping
+        let protectedEnglish = [
+            "VietGo", "window", "refresh", "defend", "texts", "tests",
+            "work", "virus", "away", "less", "boss", "yess", "was", "war", "won", "worm"
+        ]
+        var protectedRanges: [Range<Int>] = []
+        for token in protectedEnglish {
+            if let r = fullStr.range(of: token) {
+                let start = fullStr.distance(from: fullStr.startIndex, to: r.lowerBound)
+                let end = fullStr.distance(from: fullStr.startIndex, to: r.upperBound)
+                protectedRanges.append((start + 1)..<(end + 1))
+            }
+        }
+
+        while !screen.isEmpty {
+            let prevScreen = screen
+            switch engine.handleBackspace() {
+            case .passThrough:
+                screen.removeLast()
+            case .replace(let bs, let text):
+                screen.removeLast(min(bs, screen.count))
+                screen.append(contentsOf: text)
+            }
+            XCTAssertEqual(
+                screen.count,
+                prevScreen.count - 1,
+                "Backspace jumped/expanded: '\(String(prevScreen))' -> '\(String(screen))'"
+            )
+            if protectedRanges.contains(where: { $0.contains(prevScreen.count) }) {
+                XCTAssertEqual(
+                    String(screen),
+                    String(prevScreen.dropLast()),
+                    "English token mutated during Backspace: '\(String(prevScreen))' -> '\(String(screen))'"
+                )
+            }
+        }
+        XCTAssertEqual(String(screen), "")
+
+        // Held Backspace autorepeat mode (`allowToneReposition: false`) never emits synthetic replacement on coda deletion
+        var repeatEngine = VietInputEngine()
+        var repeatScreen: [Character] = []
+        for ch in "hoafn" {
+            switch repeatEngine.processKey(ch) {
+            case .passThrough:
+                repeatScreen.append(ch)
+            case .replace(let bs, let text):
+                repeatScreen.removeLast(min(bs, repeatScreen.count))
+                repeatScreen.append(contentsOf: text)
+            }
+        }
+        XCTAssertEqual(String(repeatScreen), "hoàn")
+        let repeatBS = repeatEngine.handleBackspace(allowToneReposition: false)
+        XCTAssertEqual(repeatBS, .passThrough)
+        repeatScreen.removeLast()
+        XCTAssertEqual(String(repeatScreen), "hoà")
+
+        // 2. `yes` / `yess` / `yesss`, word-final geminates, `away`, and tone-switch English words
+        let englishWords = [
+            "yes", "yess", "yesss",
+            "less", "mess", "boss", "loss", "pass", "miss",
+            "kiss", "mass", "guess", "chess", "toss", "moss",
+            "fuss", "buff", "cuff", "puff", "tariff", "purr", "swiss",
+            "lesson", "lesser", "passing", "missing",
+            "away", "awake", "aware", "award", "await",
+            "virus", "terms", "turns", "burns", "horns",
+            "corns", "barns", "harms", "norms", "worms",
+            "surf", "turf", "dwarf"
+        ]
+        for word in englishWords {
+            XCTAssertEqual(simulateTyping(word).output, word, "Failed mid-word English restore: \(word)")
+            XCTAssertEqual(simulateTyping(word + " ").output, word + " ", "Failed finalized English restore: \(word)")
+        }
+
+        // Intentional single-consonant Telex escapes and abbreviations still work
+        let intentionalEscapes: [(String, String)] = [
+            ("ass", "as"),
+            ("asss", "ass"),
+            ("hass", "has"),
+            ("gass", "gas"),
+            ("buss", "bus"),
+            ("hiss", "his"),
+            ("thiss", "this"),
+            ("for", "for"),
+            ("forr", "forr"),
+            ("carr", "car"),
+            ("herr", "her"),
+            ("losse", "lose"),
+            ("dessign", "design"),
+            ("VARR", "VAR"),
+            ("POSS", "POS")
+        ]
+        for (input, expected) in intentionalEscapes {
+            XCTAssertEqual(simulateTyping(input).output, expected, "Failed intentional escape: \(input)")
+        }
+
+        // 3. Initial-`w` English words vs comprehensive Vietnamese `w` -> `ư` combinations
+        let initialWEnglish = [
+            "was", "war", "wars", "wax", "won", "woo", "wood", "wow",
+            "worm", "worn", "warm", "warn", "ways", "wins", "wing", "wink",
+            "with", "word", "work", "world", "wrong", "write"
+        ]
+        for word in initialWEnglish {
+            XCTAssertEqual(simulateTyping(word).output, word, "Failed initial-w English restore: \(word)")
+            XCTAssertEqual(simulateTyping(word + " ").output, word + " ", "Failed finalized initial-w English: \(word)")
+        }
+
+        let vietnameseWCases: [(String, String)] = [
+            ("w", "ư"), ("ws", "ứ"), ("wf", "ừ"), ("wr", "ử"), ("wx", "ữ"), ("wj", "ự"),
+            ("uwa", "ưa"), ("uwas", "ứa"), ("uwar", "ửa"), ("uwax", "ữa"), ("uwaj", "ựa"),
+            ("own", "ơn"), ("cow", "cơ"), ("how", "hơ"), ("mowis", "mới"),
+            ("nhw", "như"), ("nhwng", "nhưng"), ("nhwngx", "những"),
+            ("twf", "từ"), ("thwr", "thử"), ("thwongf", "thường"),
+            ("chw", "chư"), ("chwx", "chữ"), ("chwa", "chưa"), ("chwong", "chương"),
+            ("trwongf", "trường"), ("trwocs", "trước"),
+            ("cwar", "cửa"), ("cwus", "cứu"),
+            ("mwa", "mưa"), ("mwcs", "mức"), ("mwoif", "mười"), ("mwops", "mướp"),
+            ("lwar", "lửa"), ("lwng", "lưng"), ("lwong", "lương"),
+            ("nwar", "nửa"), ("nwocs", "nước"),
+            ("swax", "sữa"), ("swong", "sương"),
+            ("ddwngf", "đừng"), ("ddwcs", "đức"), ("ddwa", "đưa"), ("ddwocj", "được"), ("ddwongf", "đường"),
+            ("vwaf", "vừa"), ("vwngx", "vững"),
+            ("gwir", "gửi"), ("hwong", "hương"), ("hwou", "hươu"),
+            ("rwouj", "rượu"), ("ngwoif", "người"),
+            ("giwx", "giữ"), ("giwax", "giữa"), ("giwongf", "giường"),
+            ("bwocs", "bước"), ("bwoms", "bướm"),
+            ("twois", "tưới"), ("cwois", "cưới")
+        ]
+        for (input, expected) in vietnameseWCases {
+            XCTAssertEqual(simulateTyping(input).output, expected, "Failed Vietnamese w->ư case: \(input)")
+            XCTAssertEqual(simulateTyping(input + " ").output, expected + " ", "Failed finalized Vietnamese w->ư case: \(input)")
+        }
+    }
 }

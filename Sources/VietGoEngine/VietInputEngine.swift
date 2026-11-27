@@ -18,7 +18,7 @@ public struct VietInputEngine: Sendable {
     private var prev1StreamChar: Character?
     private var urlLiteralDepth: Int = 0
     private var committedHistory: [CommittedWord] = []
-    private let maxHistoryCount = 16
+    private let maxHistoryCount = 64
 
     public init(config: EngineConfig = EngineConfig()) {
         self.config = config
@@ -62,25 +62,29 @@ public struct VietInputEngine: Sendable {
         guard isWordChar else {
             // Check if finalizing an open consonant-initial `ă`/`â` word on Space/punctuation (`ddaxa `)
             var finalAction: EngineAction = .passThrough
-            if config.autoRestoreEnglish && !displayed.isEmpty && !isLiteralToken {
-                let finalized = SyllableComposer.compose(
+            var committedLiteral = isLiteralToken
+            if !displayed.isEmpty && !isLiteralToken {
+                let finalizedResult = SyllableComposer.composeResult(
                     rawKeys: rawKeys,
                     config: config,
                     isFinalizingWord: true
                 )
-                if finalized != displayed {
+                if config.autoRestoreEnglish && finalizedResult.characters != displayed {
                     var lcp = 0
-                    let limit = min(displayed.count, finalized.count)
-                    while lcp < limit && displayed[lcp] == finalized[lcp] {
+                    let limit = min(displayed.count, finalizedResult.characters.count)
+                    while lcp < limit && displayed[lcp] == finalizedResult.characters[lcp] {
                         lcp += 1
                     }
                     let bs = displayed.count - lcp
-                    let replacement = String(finalized.dropFirst(lcp)) + String(char)
+                    let replacement = String(finalizedResult.characters.dropFirst(lcp)) + String(char)
                     finalAction = .replace(
                         backspaceCount: bs,
                         text: replacement.precomposedStringWithCanonicalMapping
                     )
-                    displayed = finalized
+                    displayed = finalizedResult.characters
+                }
+                if finalizedResult.isEscaped || finalizedResult.didAutoRestore {
+                    committedLiteral = true
                 }
             }
 
@@ -89,7 +93,7 @@ public struct VietInputEngine: Sendable {
                 rawKeys: rawKeys,
                 displayed: displayed,
                 separator: char,
-                isLiteralToken: isLiteralToken
+                isLiteralToken: committedLiteral
             ))
             if committedHistory.count > maxHistoryCount {
                 committedHistory.removeFirst()
@@ -198,7 +202,7 @@ public struct VietInputEngine: Sendable {
     }
 
     @discardableResult
-    public mutating func handleBackspace() -> EngineAction {
+    public mutating func handleBackspace(allowToneReposition: Bool = true) -> EngineAction {
         if urlLiteralDepth > 0 {
             urlLiteralDepth -= 1
         }
@@ -239,6 +243,25 @@ public struct VietInputEngine: Sendable {
         }
 
         let currentResult = SyllableComposer.composeResult(rawKeys: rawKeys, config: config)
+        if currentResult.didAutoRestore && oldDisplayed == currentResult.characters {
+            let droppedRaw = Array(rawKeys.dropLast())
+            if allowToneReposition,
+               rawKeys.count >= 2,
+               droppedRaw == afterBS,
+               !SyllableComposer.isKnownEnglishToken(String(oldDisplayed)),
+               !SyllableComposer.isKnownEnglishToken(String(droppedRaw)) {
+                let prevResult = SyllableComposer.composeResult(rawKeys: droppedRaw, config: config)
+                if !prevResult.didAutoRestore && !prevResult.isEscaped && prevResult.characters != droppedRaw {
+                    rawKeys = droppedRaw
+                    return makeReplaceAction(from: oldDisplayed, to: prevResult.characters)
+                }
+            }
+            rawKeys = afterBS
+            displayed = afterBS
+            isLiteralToken = true
+            return .passThrough
+        }
+
         if currentResult.isEscaped {
             let droppedRaw = Array(rawKeys.dropLast())
             if !droppedRaw.isEmpty && SyllableComposer.compose(rawKeys: droppedRaw, config: config) == afterBS {
@@ -265,14 +288,14 @@ public struct VietInputEngine: Sendable {
             return .passThrough
         }
 
-        // Never let Backspace expand text beyond the remaining prefix (`tién` + BS -> `tié`, never `ties`)
-        if recomposed.count > afterBS.count {
+        // Never let Backspace expand or contract character count (`tién` + BS -> `tié`, `refre` + BS -> `refr`),
+        // and never inject synthetic replacements while Backspace is held in autorepeat.
+        if !allowToneReposition || recomposed.count != afterBS.count {
             displayed = afterBS
             return .passThrough
         }
 
-        // Tone placement shifted after removing coda (e.g. `hoàn` + BS -> `hòa` instead of `hoà`,
-        // or `nhaafmf` + BS -> `nhầm` instead of `nhaafm`)
+        // Tone placement shifted after removing coda (e.g. `hoàn` + BS -> `hòa` instead of `hoà`)
         return makeReplaceAction(from: oldDisplayed, to: recomposed)
     }
 
