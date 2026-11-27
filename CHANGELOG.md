@@ -2,6 +2,13 @@
 
 Tóm tắt các tính năng mới và cải tiến qua từng phiên bản **VietGo** dành cho người dùng macOS.
 
+## [1.0.3] - 2026-11-27
+
+### Tính năng mới & Cải tiến
+- **Hỗ trợ cài đặt và cập nhật qua Homebrew Cask:** Bạn có thể cài đặt hoặc nâng cấp **VietGo** nhanh bằng dòng lệnh `brew install --cask haiquang/vietgo/vietgo` (và `brew upgrade --cask haiquang/vietgo/vietgo`), tự động gỡ cảnh báo bảo mật khi mở lần đầu trên macOS.
+- **Hướng dẫn mở khóa Gatekeeper rõ ràng cho macOS 15 Sequoia & macOS 14 Sonoma:** Bổ sung hướng dẫn chi tiết từng bước mở ứng dụng lần đầu khi tải trực tiếp file `.dmg` để tránh bấm nhầm xóa ứng dụng.
+- **Tương thích mượt mà với Microsoft Word trên macOS:** Xác nhận và tối ưu trải nghiệm gõ đoạn văn dài xen kẽ Anh – Việt, gõ chữ `ý`/`Ý`, ký tự đặc biệt, đường dẫn, từ rút gọn và xóa sửa từng chữ / từng từ ổn định trong Microsoft Word.
+
 ## [1.0.2] - 2026-11-27
 
 ### Cải tiến & Sửa lỗi
