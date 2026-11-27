@@ -23,7 +23,7 @@ Tài liệu này tổng hợp các tình huống đặc thù ở mức hệ đi�
 
 | Nhóm ứng dụng | Cách nhận diện | Hành vi điều chỉnh |
 | :--- | :--- | :--- |
-| **Terminal, PTY & IDE** | `terminalAndPTYBundleIDs` (Terminal, iTerm2, Warp, Ghostty, kitty, Alacritty, WezTerm, VSCode, Cursor, Zed) và prefix `com.jetbrains.*` | Tăng nhịp delay (`2.000 µs` mỗi Backspace, `4.000 µs` sau Backspace, `2.000 µs` mỗi chunk, `3.000 µs` settle) để tránh rớt phím trên PTY / Claude Code CLI |
+| **Terminal, PTY & IDE** | `terminalAndPTYBundleIDs` (Terminal, iTerm2, Warp, Ghostty, kitty, Alacritty, WezTerm, VSCode, Cursor, Zed, Antigravity, Zalo) và prefix `com.jetbrains.*` | Tăng nhịp delay (`2.000 µs` mỗi Backspace, `4.000 µs` sau Backspace, `2.000 µs` mỗi chunk, `3.000 µs` settle) để tránh rớt phím trên PTY / Claude Code CLI |
 | **Microsoft Office (`ý`/`Ý`)** | `microsoftOfficeBundleIDs` (Word, PowerPoint, Outlook) và `Excel` trong `alwaysAutocompleteBundleIDs` | Tăng nhịp pacing (`2.000–5.000 µs`); riêng Word/PowerPoint/Outlook phân tách `ý`/`Ý` sang dạng NFD (`requiresDecomposedAcuteY`) và cộng bù thêm Backspace khi xóa ký tự này |
 | **Ứng dụng thiết kế (`canvas`)** | `designCanvasBundleIDs` (Photoshop, Illustrator, Affinity Designer 2, Affinity Photo 2, Figma) | Kiểm tra `role` AX; khi focus không nằm trên `AXTextField`, `AXTextArea`, `AXComboBox`, `AXSearchField`, `AXWebArea`, bật `cachedIsCanvasNonTextInDesignApp = true` để nhường phím tắt vẽ |
 

@@ -8,7 +8,8 @@ Tài liệu này mô tả cách `VietInputEngine.swift` đồng bộ trạng th�
 | :--- | :--- | :--- | :--- |
 | Chỉ xóa phần hậu tố thay đổi (Longest Common Prefix) | Đang có `tiêng`, gõ `s` | Chỉ gửi 3 Backspace + `ếng` → `tiếng` | `makeReplaceAction` tìm chỉ số `lcp` chung giữa `oldDisplayed` và `newDisplayed` |
 | Xóa lùi sửa ký tự cuối | `tieengs<BS><BS>p` | `tiếp` | `handleBackspace()` tái tạo `newRawKeys` từ chuỗi còn lại qua `canonicalRawKeys` |
-| Phục hồi từ đã chốt sau Space hoặc dấu câu | `co <BS>s`, `tieeng <BS>s`, `nhu <BS>w`, `bong,<BS>s`, `hoa <BS>f`, `go go<BS><BS><BS>x` | `có`, `tiếng`, `như`, `bóng`, `hòa`, `gõ` | `committedHistory` (tối đa 16 phần tử `CommittedWord`) nạp lại từ và dấu phân cách cũ khi `displayed` trống |
+| Phục hồi từ đã chốt sau Space hoặc dấu câu | `co <BS>s`, `tieeng <BS>s`, `nhu <BS>w`, `bong,<BS>s`, `hoa <BS>f`, `go go<BS><BS><BS>x` | `có`, `tiếng`, `như`, `bóng`, `hòa`, `gõ` | `committedHistory` (tối đa 64 phần tử `CommittedWord`) nạp lại từ và dấu phân cách cũ khi `displayed` trống |
+| Hoàn thiện từ gõ thiếu dấu sau Space + Backspace | `ddieu <BS>ef`, `ddieuf <BS>e` | `điều` | `VietInputEngine` chỉ gắn `isLiteralToken = true` khi `midWordResult.didAutoRestore`, giữ `committedLiteral = false` cho vần trung gian chốt dở để quay lại gõ tiếp dấu mũ/thanh |
 | Tự đặt lại vị trí dấu thanh khi xóa phụ âm cuối | `hoafn<BS>`, `khoern<BS>` | `hòa`, `khỏe` | `SyllableComposer.compose(rawKeys: newRawKeys)` tính lại `toneTargetIndex` khi mất coda |
 | Phục hồi âm tiết khi xóa phím dấu dư | `nhaafmf<BS>` | `nhầm` | Tái tổ hợp `canonicalRawKeys` của `nhaafm` cho ra đúng từ hợp lệ |
 | Bất biến co ngắn đơn điệu trên vần trung gian | `tiengs` (`tiéng`) → `<BS>` → `<BS>` → `<BS>` → `<BS>` → `<BS>` | Co ngắn đều từng bước `tién` → `tié` → `ti` → `t` → rỗng (không bung thành `ties`) | `if recomposed.count > afterBS.count` giữ nguyên `afterBS` và trả `.passThrough` thay vì thay thế bằng `rawKeys` thô |

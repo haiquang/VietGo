@@ -987,4 +987,90 @@ final class VietGoEngineTests: XCTestCase {
             XCTAssertEqual(simulateTyping(input + " ").output, expected + " ", "Failed finalized Vietnamese w->ư case: \(input)")
         }
     }
+
+    func testRound5DieuZeroThrashFreeOrderAndPostSpaceRecovery() {
+        // 1. Zero mid-word Backspace thrashing on `ddieeuf` and `dduowcj`
+        var dieuEngine = VietInputEngine()
+        XCTAssertEqual(dieuEngine.processKey("d"), .passThrough)
+        XCTAssertEqual(dieuEngine.processKey("d"), .replace(backspaceCount: 1, text: "đ"))
+        XCTAssertEqual(dieuEngine.processKey("i"), .passThrough)
+        XCTAssertEqual(dieuEngine.processKey("e"), .passThrough)
+        XCTAssertEqual(dieuEngine.currentWord, "đie")
+        XCTAssertEqual(dieuEngine.processKey("e"), .replace(backspaceCount: 1, text: "ê"))
+        XCTAssertEqual(dieuEngine.currentWord, "điê")
+        XCTAssertEqual(dieuEngine.processKey("u"), .passThrough)
+        XCTAssertEqual(dieuEngine.processKey("f"), .replace(backspaceCount: 2, text: "ều"))
+        XCTAssertEqual(dieuEngine.currentWord, "điều")
+
+        var duocEngine = VietInputEngine()
+        XCTAssertEqual(duocEngine.processKey("d"), .passThrough)
+        XCTAssertEqual(duocEngine.processKey("d"), .replace(backspaceCount: 1, text: "đ"))
+        XCTAssertEqual(duocEngine.processKey("u"), .passThrough)
+        XCTAssertEqual(duocEngine.processKey("o"), .passThrough)
+        XCTAssertEqual(duocEngine.currentWord, "đuo")
+        XCTAssertEqual(duocEngine.processKey("w"), .replace(backspaceCount: 2, text: "ươ"))
+        XCTAssertEqual(duocEngine.processKey("c"), .passThrough)
+        XCTAssertEqual(duocEngine.processKey("j"), .replace(backspaceCount: 2, text: "ợc"))
+        XCTAssertEqual(duocEngine.currentWord, "được")
+
+        // 2. All valid Telex keystroke orders, casing, and VNI orders for `điều`
+        let dieuOrders = [
+            "ddieeuf", "ddieefu", "ddieuef", "ddieufe", "ddiefue", "ddiefeu", "ddifeeu",
+            "dideeuf", "dideefu", "dideuef", "dideufe", "didefeu", "didfeeu",
+            "diedeuf", "diedfeu", "dieeufd", "diefeud", "difeeud"
+        ]
+        for input in dieuOrders {
+            XCTAssertEqual(simulateTyping(input).output, "điều", "Failed mid-word điều order: \(input)")
+            XCTAssertEqual(simulateTyping(input + " ").output, "điều ", "Failed finalized điều order: \(input)")
+        }
+        XCTAssertEqual(simulateTyping("Ddieeuf ").output, "Điều ")
+        XCTAssertEqual(simulateTyping("Ddiefeu ").output, "Điều ")
+        XCTAssertEqual(simulateTyping("DDIEEUF ").output, "ĐIỀU ")
+
+        let vniConfig = EngineConfig(inputMethod: .vni)
+        for vniInput in ["d9ie62u ", "d9ieu62 ", "d9ieu26 ", "d9ie2u6 ", "die62u9 "] {
+            XCTAssertEqual(simulateTyping(vniInput, config: vniConfig).output, "điều ", "Failed VNI điều: \(vniInput)")
+        }
+
+        // 3. Pre-shape tone free-order across other `-iê-`, `-uô-`, `-ươ-`, `-uyê-` words
+        let freeOrderPreShapeCases: [(String, String)] = [
+            ("nhiefeu ", "nhiều "),
+            ("chiefeu ", "chiều "),
+            ("kiefeu ", "kiều "),
+            ("liefeu ", "liều "),
+            ("yefeu ", "yều "),
+            ("tieseng ", "tiếng "),
+            ("tiefeng ", "tiềng "),
+            ("viejet ", "việt "),
+            ("cuosoi ", "cuối "),
+            ("muosoi ", "muối "),
+            ("truofwng ", "trường "),
+            ("dduojwc ", "được "),
+            ("tuyefen ", "tuyền ")
+        ]
+        for (input, expected) in freeOrderPreShapeCases {
+            XCTAssertEqual(simulateTyping(input).output, expected, "Failed free-order pre-shape case: \(input)")
+        }
+
+        // English guards & unfinished intermediate words on Space remain intact
+        let preservedCases: [(String, String)] = [
+            ("decree ", "decree "),
+            ("degree ", "degree "),
+            ("dies ", "dies "),
+            ("lies ", "lies "),
+            ("ties ", "ties "),
+            ("yes ", "yes "),
+            ("yess ", "yess "),
+            ("ddie ", "ddie "),
+            ("ddien ", "ddien ")
+        ]
+        for (input, expected) in preservedCases {
+            XCTAssertEqual(simulateTyping(input).output, expected, "Failed preserved English/intermediate case: \(input)")
+        }
+
+        // 4. Post-Space Backspace recovery into unfinished `ddieu` / `ddieuf` -> `điều`
+        XCTAssertEqual(simulateTyping("ddieu \u{08}ef").output, "điều")
+        XCTAssertEqual(simulateTyping("ddieuf \u{08}e").output, "điều")
+        XCTAssertEqual(simulateTyping("ddieeuf \u{08}s").output, "điếu")
+    }
 }

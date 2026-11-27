@@ -116,6 +116,7 @@ fi
 
 echo "==> [3/3] Executing Cumulative Browser HID QA suite..."
 QA_ARGS=(
+    -ApplePressAndHoldEnabled NO
     --ime-worker-bin "$QA_BUILD_DIR/validate_fast_chat_e2e"
     --json-out "$RESULTS_JSON"
 )
@@ -123,8 +124,11 @@ if [[ -n "$FILTER_TERM" ]]; then
     QA_ARGS+=(--filter "$FILTER_TERM")
 fi
 
+defaults write net.imput.helium ApplePressAndHoldEnabled -bool false
+set +e
 "$QA_APP_MACOS/BrowserHostQA" "${QA_ARGS[@]}"
 QA_STATUS=$?
+set -e
 
 if [[ "$WAS_VIETGO_RUNNING" -eq 1 ]]; then
     bash "$ROOT_DIR/scripts/build_app.sh" >/dev/null

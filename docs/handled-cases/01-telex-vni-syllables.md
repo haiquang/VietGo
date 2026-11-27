@@ -10,6 +10,8 @@ Hệ thống tái phân tích toàn bộ chuỗi `rawKeys` từ đầu âm tiế
 | :--- | :--- | :--- | :--- |
 | Telex cơ bản có dấu | `xin chaof`, `tieengs vieetj`, `nguwowif`, `dduwowcj` | `xin chào`, `tiếng việt`, `người`, `được` | `SyllableComposer.composeResult` |
 | Đảo thứ tự phím dấu và móc/mũ | `truongwf`, `truwongf`, `duocdwj`, `vietej`, `hanfh`, `cuar`, `cura`, `taij`, `taji`, `mowis` | `trường`, `trường`, `được`, `việt`, `hành`, `của`, `của`, `tại`, `tại`, `mới` | Áp thanh điệu `tone` và hình dáng nguyên âm độc lập rồi đặt dấu tại `toneTargetIndex` |
+| Bỏ dấu thanh trước khi gõ phím mũ/móc trên nguyên âm đôi trung gian | `ddiefeu`, `ddifeeu`, `nhiefeu`, `tieseng`, `viejet`, `truofwng`, `dduojwc` | `điều`, `điều`, `nhiều`, `tiếng`, `việt`, `trường`, `được` | `applyShape` cho phép nguyên âm trung gian `ie`/`ye`/`uo`/`ưo`/`uye`/`ua` nhận dấu mũ/móc khi đã có `tone` hoặc `coda` |
+| Giữ mượt vần trung gian `đie`/`đuo` giữa từ không nháy Backspace | `ddieeuf`, `dduowcj` | `đ` → `đi` → `đie` → `điê` → `điêu` → `điều` | 0 lần bung ngược `ddie`/`dduo` ở phím thứ 4–5 nhờ giữ `intermediateOnlyNuclei` hợp lệ khi `!isFinalizingWord && hasExplicitVietMark` |
 | Đảo chữ `d` tạo `đ` muộn (từ không phải tiếng Anh) | `dangd`, `duowngd` | `đang`, `đương` | `strokeInitialD` tìm âm đầu `d`/`D` khi chưa `hasStrokeD` |
 | Chuyển dấu thanh ngay trên từ | `as` → `asf`, `tiengs` → `tieengs` | `á` → `à`, `tiéng` → `tiếng` | `applyTone` ghi đè `tone` mới |
 | Xóa dấu thanh bằng `z` / `0` | `asfz`, `tieengsz`, `a10` (VNI) | `a`, `tiêng`, `a` | `tone = .none` khi gặp `z` (Telex) hoặc `0` (VNI) |

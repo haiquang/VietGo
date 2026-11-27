@@ -64,6 +64,11 @@ public struct VietInputEngine: Sendable {
             var finalAction: EngineAction = .passThrough
             var committedLiteral = isLiteralToken
             if !displayed.isEmpty && !isLiteralToken {
+                let midWordResult = SyllableComposer.composeResult(
+                    rawKeys: rawKeys,
+                    config: config,
+                    isFinalizingWord: false
+                )
                 let finalizedResult = SyllableComposer.composeResult(
                     rawKeys: rawKeys,
                     config: config,
@@ -83,7 +88,9 @@ public struct VietInputEngine: Sendable {
                     )
                     displayed = finalizedResult.characters
                 }
-                if finalizedResult.isEscaped || finalizedResult.didAutoRestore {
+                if finalizedResult.isEscaped ||
+                    midWordResult.didAutoRestore ||
+                    (finalizedResult.didAutoRestore && (SyllableComposer.isKnownEnglishToken(String(rawKeys)) || rawKeys.allSatisfy({ $0.isUppercase }))) {
                     committedLiteral = true
                 }
             }

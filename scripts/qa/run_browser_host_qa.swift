@@ -474,6 +474,9 @@ private final class IMEWorkerClient {
 @MainActor
 enum BrowserHostQAMain {
     static func main() {
+        UserDefaults.standard.register(defaults: ["ApplePressAndHoldEnabled": false])
+        UserDefaults.standard.set(false, forKey: "ApplePressAndHoldEnabled")
+
         let args = CommandLine.arguments
         var workerBinaryPath: String?
         var filterTerm: String?
@@ -738,8 +741,26 @@ enum BrowserHostQAMain {
                 input: "Chafo banj, yess hay away vaf virus ddeefu oorn!\nNhwng nhwngx twf ddwocj nhw giwx nguyeen, doesn't break!\n",
                 expected: "Chào bạn, yess hay away và virus đều ổn! | Nhưng những từ được như giữ nguyên, doesn't break!",
                 isChatSubmit: true
+            ),
+
+            // === Round 5 Cases (Zero-Thrash & Free-Order `điều` + Post-Space Recovery) ===
+            BrowserQACase(
+                name: "R5_01_Dieu_AllOrders_ExtremeRollover250WPM",
+                selector: "#rich-editor",
+                speed: extreme250,
+                input: "ddieeuf ddieuef ddieufe ddiefeu ddifeeu dieeufd Ddieeuf nhiefeu tieseng viejet truofwng dduojwc ",
+                expected: "điều điều điều điều điều điều Điều nhiều tiếng việt trường được ",
+                isChatSubmit: false
+            ),
+            BrowserQACase(
+                name: "R5_02_Dieu_Omnibox_PostSpaceRecovery_And_Backspace",
+                selector: "#omnibox-input",
+                speed: fast140,
+                input: "mootj ddieeuf quan trongj, ddieu \u{08}ef hay ddieuf \u{08}e vaf dies lies yess ",
+                expected: "một điều quan trọng, điều hay điều và dies lies yess ",
+                isChatSubmit: false
             )
-            // APPEND NEW ROUND CASES (`R5_XX_...`) BELOW THIS LINE
+            // APPEND NEW ROUND CASES (`R6_XX_...`) BELOW THIS LINE
         ]
 
         let cases: [BrowserQACase]

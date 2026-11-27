@@ -153,25 +153,37 @@ public enum SyllableComposer {
         }
 
         func applyShape(_ targetShape: VowelShape, toBase targetBases: Set<Character>, triggerChar: Character) -> Bool {
-            // Never resurrect or shape-escape a syllable whose coda/tone combination is already phonotactically invalid (`decree`)
-            let isUaBeforeCircumflex = vowels.count == 2 &&
-                vowels[0].base == "u" && vowels[0].shape == .none &&
-                vowels[1].base == "a" && vowels[1].shape == .none
-            if config.autoRestoreEnglish &&
-               (tone != .none || (!codaChars.isEmpty && !isUaBeforeCircumflex)) &&
-               !isPhonotacticallyValid(
-                   onsetChars: onsetChars,
-                   vowels: vowels,
-                   codaChars: codaChars,
-                   tone: tone,
-                   rawKeys: Array(rawKeys.prefix(currentRawIndex)),
-                   inputMethod: config.inputMethod,
-                   isFinalizingWord: false,
-                   hadLongDistanceDStroke: hadLongDistanceDStroke,
-                   hadToneSwitch: hadToneSwitch,
-                   hadInitialStandaloneW: hadInitialStandaloneW
-               ) {
-                return false
+            // Never resurrect or shape-escape a syllable whose coda/tone combination is already phonotactically invalid (`decree`),
+            // while allowing unshaped intermediate nuclei (`ie`, `ye`, `uo`, `ưo`, `uye`, `ua`) to receive their vowel shape (`ddiefeu -> điều`, `tieseng -> tiếng`).
+            if config.autoRestoreEnglish && (tone != .none || !codaChars.isEmpty) {
+                let preShapeNucleus = String(vowels.map {
+                    VietnameseTables.vowelCharacter(base: $0.base, shape: $0.shape, tone: .none, isUppercase: false)
+                })
+                let isPreShapeIntermediate = VietnameseTables.intermediateOnlyNuclei.contains(preShapeNucleus) || preShapeNucleus == "ua"
+                if isPreShapeIntermediate {
+                    let onsetLower = String(onsetChars).lowercased()
+                    let codaLower = String(codaChars).lowercased()
+                    if !VietnameseTables.validOnsets.contains(onsetLower) || !VietnameseTables.validCodas.contains(codaLower) {
+                        return false
+                    }
+                    if (codaLower == "c" || codaLower == "ch" || codaLower == "k" || codaLower == "p" || codaLower == "t") &&
+                        (tone == .grave || tone == .hook || tone == .tilde) {
+                        return false
+                    }
+                } else if !isPhonotacticallyValid(
+                    onsetChars: onsetChars,
+                    vowels: vowels,
+                    codaChars: codaChars,
+                    tone: tone,
+                    rawKeys: Array(rawKeys.prefix(currentRawIndex)),
+                    inputMethod: config.inputMethod,
+                    isFinalizingWord: false,
+                    hadLongDistanceDStroke: hadLongDistanceDStroke,
+                    hadToneSwitch: hadToneSwitch,
+                    hadInitialStandaloneW: hadInitialStandaloneW
+                ) {
+                    return false
+                }
             }
 
             // Handle `uo` / `uô` -> `ươ` compound horn (`w` in Telex or `7` in VNI)
@@ -1018,7 +1030,9 @@ public enum SyllableComposer {
 
         // Validate closed vs open vowel nuclei strictly
         if codaChars.isEmpty {
+            let hasExplicitVietMark = onsetLower == "đ" || vowels.contains(where: { $0.shape != .none })
             let isValidOpen = VietnameseTables.validOpenNuclei.contains(nucleusString) ||
+                (!isFinalizingWord && hasExplicitVietMark && VietnameseTables.intermediateOnlyNuclei.contains(nucleusString)) ||
                 (inputMethod == .vni && tone != .none && isElongatedValidOpenNucleus(vowels: vowels))
             guard isValidOpen else {
                 return false

@@ -109,6 +109,8 @@ public final class EventTapManager: ObservableObject {
         "com.github.wez.wezterm",
         "com.microsoft.VSCode",
         "com.todesktop.230313mzl4w4u92",
+        "com.google.antigravity",
+        "com.vng.zalo",
         "dev.zed.Zed"
     ]
 
