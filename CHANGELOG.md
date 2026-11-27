@@ -2,6 +2,16 @@
 
 Mọi thay đổi đáng chú ý của **VietGo** được ghi lại tại đây.
 
+## [1.0.1] - 2026-11-27
+
+### Đã sửa
+- Sửa lỗi hit-testing trên giao diện SwiftUI: trước đó các nút dùng `.buttonStyle(.plain)` chỉ nhận click trực tiếp vào ký tự chữ/icon thay vì toàn khung nền (`Color.clear` / `Spacer()`). Đã bổ sung `.contentShape(...)` phủ trọn khung bấm cho thanh chuyển 4 tab (`Bộ gõ`, `Thông minh`, `Phím tắt`, `Gõ thử`), thẻ chọn `Telex`/`VNI`, badge trạng thái quyền, nút `Đổi phím tắt…`, các nút `Mẫu nhanh`, chip mẫu ở tab `Gõ thử`, và 5 hàng cài đặt có nút gạt.
+- Chuyển khoảng trống giữa phần nhãn và nút gạt trong `VGSettingRow` vào padding nội bộ (`spacing: 0`) để không còn khe chết trước switch.
+
+### Đã thêm
+- Cho phép bấm trực tiếp vào badge icon `V`/`E` trên thanh trạng thái để bật/tắt nhanh chế độ Tiếng Việt/Tiếng Anh.
+- Hỗ trợ tham số khởi chạy `--open-settings` để mở thẳng cửa sổ cài đặt khi khởi động.
+
 ## [1.0.0] - 2026-11-27
 
 ### Đã thêm

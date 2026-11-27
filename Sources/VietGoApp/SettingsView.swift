@@ -88,15 +88,23 @@ struct SettingsView: View {
 
     private var statusHeader: some View {
         HStack(spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .fill(settings.isEnabled ? Color.accentColor : Color.primary.opacity(0.08))
-                    .frame(width: 40, height: 40)
-                Text(settings.isEnabled ? "V" : "E")
-                    .font(.system(size: 19, weight: .bold, design: .rounded))
-                    .foregroundStyle(settings.isEnabled ? .white : .secondary)
+            Button {
+                settings.isEnabled.toggle()
+                tapManager.resetEngine()
+            } label: {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 11, style: .continuous)
+                        .fill(settings.isEnabled ? Color.accentColor : Color.primary.opacity(0.08))
+                        .frame(width: 40, height: 40)
+                    Text(settings.isEnabled ? "V" : "E")
+                        .font(.system(size: 19, weight: .bold, design: .rounded))
+                        .foregroundStyle(settings.isEnabled ? .white : .secondary)
+                }
+                .animation(.spring(response: 0.24, dampingFraction: 0.82), value: settings.isEnabled)
+                .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
             }
-            .animation(.spring(response: 0.24, dampingFraction: 0.82), value: settings.isEnabled)
+            .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+            .buttonStyle(.plain)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(settings.isEnabled ? "Tiếng Việt đang bật" : "Đang ở chế độ Tiếng Anh")
@@ -134,7 +142,9 @@ struct SettingsView: View {
                     Capsule(style: .continuous)
                         .fill((tapManager.isAccessibilityGranted ? Color.green : Color.orange).opacity(0.13))
                 )
+                .contentShape(Capsule(style: .continuous))
             }
+            .contentShape(Capsule(style: .continuous))
             .buttonStyle(.plain)
 
             Toggle("", isOn: $settings.isEnabled)
@@ -221,7 +231,9 @@ struct SettingsView: View {
                         RoundedRectangle(cornerRadius: 7, style: .continuous)
                             .strokeBorder(active ? Color.primary.opacity(0.08) : Color.clear, lineWidth: 0.5)
                     )
+                    .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
                 }
+                .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
                 .buttonStyle(.plain)
             }
         }
@@ -274,7 +286,12 @@ struct SettingsView: View {
                 VGSettingRow(
                     title: "Gõ w đơn thành ư",
                     subtitle: "Nhấn w ngay sau phụ âm đầu (nhw → như, wf → ừ).",
-                    badgeText: settings.inputMethod == .telex ? nil : "Chỉ Telex"
+                    badgeText: settings.inputMethod == .telex ? nil : "Chỉ Telex",
+                    onRowTap: {
+                        if settings.inputMethod == .telex {
+                            settings.standaloneW.toggle()
+                        }
+                    }
                 ) {
                     Toggle("", isOn: $settings.standaloneW)
                         .labelsHidden()
@@ -289,7 +306,12 @@ struct SettingsView: View {
                 VGSettingRow(
                     title: "Gõ tắt [ → ơ, ] → ư trong Telex",
                     subtitle: "Nhập nhanh nguyên âm ơ và ư bằng phím ngoặc vuông.",
-                    badgeText: settings.inputMethod == .telex ? nil : "Chỉ Telex"
+                    badgeText: settings.inputMethod == .telex ? nil : "Chỉ Telex",
+                    onRowTap: {
+                        if settings.inputMethod == .telex {
+                            settings.bracketShortcuts.toggle()
+                        }
+                    }
                 ) {
                     Toggle("", isOn: $settings.bracketShortcuts)
                         .labelsHidden()
@@ -307,7 +329,10 @@ struct SettingsView: View {
                 VGSettingRow(
                     title: "Tự động khôi phục từ tiếng Anh & code",
                     subtitle: "Tự trả về nguyên bản khi chuỗi phím không khớp âm tiết Việt hoặc khớp từ vựng tiếng Anh hợp lệ.",
-                    systemImage: "text.badge.checkmark"
+                    systemImage: "text.badge.checkmark",
+                    onRowTap: {
+                        settings.autoRestoreEnglish.toggle()
+                    }
                 ) {
                     Toggle("", isOn: $settings.autoRestoreEnglish)
                         .labelsHidden()
@@ -338,7 +363,10 @@ struct SettingsView: View {
                 VGSettingRow(
                     title: "Chống lỗi lặp / nuốt chữ trên trình duyệt & Launcher",
                     subtitle: "Tương thích inline autocomplete trên Chrome, Safari, Arc, Dia, Comet, ChatGPT Atlas, Spotlight, Raycast và Microsoft Office.",
-                    systemImage: "sparkles.rectangle.stack"
+                    systemImage: "sparkles.rectangle.stack",
+                    onRowTap: {
+                        settings.autocompleteFix.toggle()
+                    }
                 ) {
                     Toggle("", isOn: $settings.autocompleteFix)
                         .labelsHidden()
@@ -358,7 +386,10 @@ struct SettingsView: View {
                 VGSettingRow(
                     title: "Khởi động cùng macOS",
                     subtitle: "Tự mở VietGo ẩn trên thanh menu ngay khi đăng nhập.",
-                    systemImage: "power"
+                    systemImage: "power",
+                    onRowTap: {
+                        settings.launchAtLogin.toggle()
+                    }
                 ) {
                     Toggle("", isOn: $settings.launchAtLogin)
                         .labelsHidden()
@@ -478,7 +509,9 @@ struct SettingsView: View {
                                     RoundedRectangle(cornerRadius: 8, style: .continuous)
                                         .fill(Color.primary.opacity(0.05))
                                 )
+                                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                             }
+                            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                             .buttonStyle(.plain)
                         }
                     }

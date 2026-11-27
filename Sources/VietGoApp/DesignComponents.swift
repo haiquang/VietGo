@@ -29,6 +29,7 @@ struct VGSettingRow<Trailing: View>: View {
     let subtitle: String?
     let badgeText: String?
     let systemImage: String?
+    let onRowTap: (() -> Void)?
     private let trailing: Trailing
 
     init(
@@ -36,16 +37,40 @@ struct VGSettingRow<Trailing: View>: View {
         subtitle: String? = nil,
         badgeText: String? = nil,
         systemImage: String? = nil,
+        onRowTap: (() -> Void)? = nil,
         @ViewBuilder trailing: () -> Trailing
     ) {
         self.title = title
         self.subtitle = subtitle
         self.badgeText = badgeText
         self.systemImage = systemImage
+        self.onRowTap = onRowTap
         self.trailing = trailing()
     }
 
     var body: some View {
+        HStack(alignment: .center, spacing: 0) {
+            if let onRowTap {
+                labelArea
+                    .padding(.leading, 14)
+                    .padding(.trailing, 14)
+                    .padding(.vertical, 11)
+                    .contentShape(Rectangle())
+                    .onTapGesture(perform: onRowTap)
+            } else {
+                labelArea
+                    .padding(.leading, 14)
+                    .padding(.trailing, 14)
+                    .padding(.vertical, 11)
+            }
+
+            trailing
+                .padding(.trailing, 14)
+                .padding(.vertical, 11)
+        }
+    }
+
+    private var labelArea: some View {
         HStack(alignment: .center, spacing: 14) {
             if let systemImage {
                 Image(systemName: systemImage)
@@ -86,11 +111,8 @@ struct VGSettingRow<Trailing: View>: View {
             }
 
             Spacer(minLength: 12)
-
-            trailing
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 11)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -197,7 +219,9 @@ struct VGMethodOptionCard: View {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .strokeBorder(isSelected ? Color.accentColor.opacity(0.75) : Color.primary.opacity(0.08), lineWidth: isSelected ? 1.5 : 1)
             )
+            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
+        .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .buttonStyle(.plain)
     }
 }

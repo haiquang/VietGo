@@ -37,7 +37,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updateStatusItemAppearance()
         rebuildMenu()
 
-        if !tapManager.isAccessibilityGranted {
+        if !tapManager.isAccessibilityGranted || CommandLine.arguments.contains("--open-settings") {
             openSettingsWindow()
         }
 

@@ -66,7 +66,9 @@ struct ShortcutRecorderView: View {
                             RoundedRectangle(cornerRadius: 7, style: .continuous)
                                 .strokeBorder(isRecording ? Color.accentColor : Color.primary.opacity(0.14), lineWidth: 1)
                         )
+                        .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
                     }
+                    .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
                     .buttonStyle(.plain)
 
                     if shortcut != .controlSpace && !isRecording {
@@ -109,7 +111,9 @@ struct ShortcutRecorderView: View {
                                     RoundedRectangle(cornerRadius: 6, style: .continuous)
                                         .strokeBorder(selected ? Color.clear : Color.primary.opacity(0.1), lineWidth: 1)
                                 )
+                                .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                         }
+                        .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                         .buttonStyle(.plain)
                     }
                 }
