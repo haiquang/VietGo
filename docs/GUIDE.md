@@ -31,7 +31,17 @@ Luồng xử lý phím bấm:
 swift test
 ```
 
-Lệnh này chạy toàn bộ 27 test case trong `Tests/VietGoEngineTests/VietGoEngineTests.swift`.
+Lệnh này chạy toàn bộ unit test trong `Tests/VietGoEngineTests/VietGoEngineTests.swift`.
+
+### Cài đặt nhanh qua Homebrew Cask (Khuyên dùng)
+
+```bash
+brew tap haiquang/vietgo https://github.com/haiquang/VietGo.git
+brew trust haiquang/vietgo   # chỉ cần trên Homebrew 7+
+brew install --cask haiquang/vietgo/vietgo
+```
+
+Cask trong kho mã (`Casks/vietgo.rb`) tự động gỡ cờ cách ly Gatekeeper (`com.apple.quarantine`) sau khi cài.
 
 ### Build và đóng gói `.app`
 
@@ -41,12 +51,20 @@ bash scripts/build_app.sh
 
 Script sẽ biên dịch bản release, tạo icon (nếu chưa có `Resources/AppIcon.icns`), đóng gói bundle tại `dist/VietGo.app` và ký chữ ký số.
 
-### Cài đặt và cấp quyền Trợ năng (Accessibility)
+### Cài đặt thủ công từ `.dmg` hoặc bản build & Vượt macOS Gatekeeper
 
 ```bash
 cp -R dist/VietGo.app /Applications/
 open /Applications/VietGo.app
 ```
+
+Nếu tải `VietGo-v*-macos-arm64.dmg` từ trình duyệt, macOS Gatekeeper sẽ báo cảnh báo ứng dụng chưa qua notarization của Apple khi mở lần đầu:
+
+- **macOS 15 Sequoia trở lên:** Bấm **Done** (không bấm *Move to Trash*) → mở **System Settings → Privacy & Security** → cuộn xuống bấm **Open Anyway**.
+- **macOS 14 Sonoma:** Giữ `Control` + bấm vào **VietGo** trong `/Applications` → chọn **Open**.
+- **Hoặc dùng 1 lệnh Terminal:** `xattr -cr /Applications/VietGo.app && open /Applications/VietGo.app`.
+
+### Cấp quyền Trợ năng (Accessibility)
 
 1. Mở **System Settings → Privacy & Security → Accessibility**.
 2. Bật công tắc cho **VietGo**. Nếu vừa cập nhật bản build mới dùng chữ ký ad-hoc (`-`), bạn cần tắt rồi bật lại quyền cho VietGo hoặc xóa mục cũ rồi thêm lại.
@@ -98,7 +116,11 @@ Cửa sổ cài đặt VietGo (`620 × 520` pt) gồm 4 tab chính:
 swift test
 ```
 
-Gồm 27 test method kiểm chứng các quy tắc Telex, VNI, dấu mới/cũ, auto-restore tiếng Anh, từ rút gọn, URL, Backspace sau Space, đồng bộ con trỏ và giới hạn hiệu năng `O(1)` cho chuỗi dài trên 48 ký tự.
+Gồm 28 test method kiểm chứng các quy tắc Telex, VNI, dấu mới/cũ, auto-restore tiếng Anh, `yes`/`yess`/geminate, `w -> ư`, từ rút gọn, URL, Backspace đơn điệu trên đoạn văn dài và giới hạn hiệu năng `O(1)` cho chuỗi dài trên 48 ký tự. Để chạy kèm toàn bộ bộ kiểm thử trình duyệt thật cộng dồn (`R3_*` + `R4_*`), chạy:
+
+```bash
+bash scripts/qa/run_regression_qa.sh
+```
 
 ### Công cụ kiểm chứng E2E qua `.cghidEventTap`
 
@@ -115,6 +137,9 @@ Script `scripts/validate_fast_chat_e2e.swift` hỗ trợ hai chế độ:
 
 ## 5. Xử lý sự cố thường gặp (Troubleshooting)
 
+- **macOS báo *"Apple could not verify “VietGo” is free of malware..."* khi mở file `.dmg` tải về:**
+  - Nguyên nhân: Bản phát hành mở dùng chữ ký ad-hoc (chưa qua notarization trả phí của Apple).
+  - Cách xử lý: Bấm **Done** → **System Settings → Privacy & Security** → bấm **Open Anyway**, hoặc chạy `xattr -cr /Applications/VietGo.app`, hoặc cài đặt qua `brew install --cask haiquang/vietgo/vietgo`.
 - **Đã build lại `dist/VietGo.app` nhưng gõ không ra dấu:**
   - Nguyên nhân thường gặp là bundle ad-hoc mới thay đổi chữ ký khiến macOS vô hiệu hóa quyền Accessibility cũ. Mở *System Settings → Privacy & Security → Accessibility*, xóa mục **VietGo** cũ và thêm lại bản mới (hoặc dùng chứng chỉ `VietGo Local CodeSign` ở Mục 2).
 - **Ô nhập liệu là trường mật khẩu:**

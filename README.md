@@ -1,6 +1,6 @@
 # VietGo — Bộ gõ Tiếng Việt Native cho macOS
 
-**VietGo** là bộ gõ tiếng Việt mã nguồn sạch (clean-room) viết hoàn toàn bằng **Swift & SwiftUI** cho macOS (tối ưu cho Apple Silicon), tham khảo những ưu điểm tốt nhất từ cộng đồng mã nguồn mở (`OpenKey`, `XKey`, `vi-rs`).
+**VietGo** là bộ gõ tiếng Việt mã nguồn sạch (clean-room) viết hoàn toàn bằng **Swift & SwiftUI** cho macOS (tối ưu cho Apple Silicon), kế thừa kinh nghiệm thực tế từ cộng đồng mã nguồn mở (`OpenKey`, `XKey`, `vi-rs`).
 
 ## Tính năng chính
 
@@ -25,7 +25,37 @@
 - `Tests/VietGoEngineTests/`: Bộ unit test kiểm chứng Telex, VNI, dấu mới/cũ, tiếng Anh, giữ hoa/thường và Backspace.
 - `scripts/build_app.sh`: Script biên dịch bản Release và đóng gói `dist/VietGo.app`.
 
-## Cách biên dịch & cài đặt
+## Cài đặt & Biên dịch
+
+### Cách 1: Cài đặt qua Homebrew Cask (Khuyên dùng)
+
+Cài đặt bằng Homebrew sẽ tự động gỡ cờ cách ly Gatekeeper để bạn mở ứng dụng trực tiếp mà không gặp hộp thoại chặn:
+
+```bash
+brew tap haiquang/vietgo https://github.com/haiquang/VietGo.git
+brew trust haiquang/vietgo   # chỉ cần trên Homebrew 7+
+brew install --cask haiquang/vietgo/vietgo
+```
+
+Cập nhật lên phiên bản mới sau này:
+
+```bash
+brew upgrade --cask haiquang/vietgo/vietgo
+```
+
+### Cách 2: Tải file `.dmg` từ GitHub Releases & Vượt macOS Gatekeeper
+
+1. Tải `VietGo-v*-macos-arm64.dmg` mới nhất tại [GitHub Releases](https://github.com/haiquang/VietGo/releases/latest).
+2. Mở file `.dmg` và kéo **VietGo.app** vào thư mục **Applications**.
+3. **Mở lần đầu (vượt cảnh báo Gatekeeper):** Vì VietGo là phần mềm mã nguồn mở độc lập chưa trả phí ký chứng chỉ Apple Developer, macOS có thể hiện thông báo *"Apple could not verify “VietGo” is free of malware..."*. Hãy xử lý theo một trong hai cách sau:
+   - **Cách A (Giao diện — macOS 15 Sequoia trở lên):** Bấm **Done** (tuyệt đối không bấm *Move to Trash*) → mở **System Settings → Privacy & Security** → cuộn xuống mục *Security* bấm **Open Anyway** → xác nhận mật khẩu hoặc Touch ID. *(Trên macOS 14 Sonoma: giữ `Control` + bấm chuột vào **VietGo** trong `/Applications` → chọn **Open**).*
+   - **Cách B (Nhanh bằng 1 lệnh Terminal):**
+     ```bash
+     xattr -cr /Applications/VietGo.app
+     open /Applications/VietGo.app
+     ```
+
+### Cách 3: Tự biên dịch từ mã nguồn
 
 1. Chạy unit test:
    ```bash
@@ -40,9 +70,11 @@
    cp -R dist/VietGo.app /Applications/
    open /Applications/VietGo.app
    ```
-4. **Cấp quyền Trợ năng (Accessibility)**:
-   - Ở lần mở đầu tiên, bấm **Cấp quyền** trong cửa sổ cài đặt (hoặc vào *System Settings → Privacy & Security → Accessibility* và bật **VietGo**).
-   - Bộ gõ sẽ tự động kích hoạt ngay khi quyền được bật.
+
+### Cấp quyền Trợ năng (Accessibility)
+
+- Ở lần mở đầu tiên, bấm **Cấp quyền** trong cửa sổ cài đặt (hoặc vào *System Settings → Privacy & Security → Accessibility* và bật **VietGo**).
+- Bộ gõ sẽ tự động kích hoạt ngay khi quyền được bật.
 
 ## Mẹo dùng phím tắt `Control + Space`
 
