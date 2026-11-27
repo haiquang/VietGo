@@ -1,0 +1,1303 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VietGo — macOS Native Precision Prototype</title>
+  <style>
+    :root {
+      --bg-stage: #e8e9ed;
+      --bg-window: #f5f5f7;
+      --surface: #ffffff;
+      --surface-elevated: #fbfbfc;
+      --surface-muted: rgba(0, 0, 0, 0.045);
+      --border: rgba(0, 0, 0, 0.085);
+      --border-strong: rgba(0, 0, 0, 0.14);
+      --text: #1d1d1f;
+      --text-secondary: #525257;
+      --text-tertiary: #6e6e73;
+      --accent: #0071e3;
+      --accent-soft: rgba(0, 113, 227, 0.1);
+      --accent-border: rgba(0, 113, 227, 0.45);
+      --on-accent: #ffffff;
+      --success: #146c2e;
+      --success-bg: rgba(40, 205, 65, 0.12);
+      --warning: #8f4000;
+      --warning-bg: rgba(255, 159, 10, 0.14);
+      --danger: #d70015;
+      --traffic-close: #ff5f57;
+      --traffic-min: #febc2e;
+      --traffic-zoom: #28c840;
+      --keycap-top: #ffffff;
+      --keycap-bottom: #f1f2f5;
+      --keycap-border: #d2d2d7;
+      --window-shadow: 0 24px 60px rgba(0, 0, 0, 0.16), 0 0 0 1px rgba(0, 0, 0, 0.08);
+      --menubar-bg: rgba(255, 255, 255, 0.72);
+      --dark-bg-stage: #111113;
+      --dark-bg-window: #1c1c1e;
+      --dark-surface: #262629;
+      --dark-surface-elevated: #2c2c2f;
+      --dark-text: #f5f5f7;
+      --dark-text-secondary: #98989d;
+      --dark-text-tertiary: #6e6e73;
+      --dark-accent: #0a84ff;
+      --dark-success: #30d158;
+      --dark-warning: #ffd60a;
+      --dark-danger: #ff453a;
+      --dark-keycap-top: #343438;
+      --dark-keycap-bottom: #26262a;
+      --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", sans-serif;
+      --font-mono: "SF Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+      color-scheme: light;
+    }
+
+    [data-theme="dark"] {
+      --bg-stage: var(--dark-bg-stage);
+      --bg-window: var(--dark-bg-window);
+      --surface: var(--dark-surface);
+      --surface-elevated: var(--dark-surface-elevated);
+      --surface-muted: rgba(255, 255, 255, 0.07);
+      --border: rgba(255, 255, 255, 0.09);
+      --border-strong: rgba(255, 255, 255, 0.16);
+      --text: var(--dark-text);
+      --text-secondary: var(--dark-text-secondary);
+      --text-tertiary: var(--dark-text-tertiary);
+      --accent: var(--dark-accent);
+      --accent-soft: rgba(10, 132, 255, 0.16);
+      --accent-border: rgba(10, 132, 255, 0.55);
+      --success: var(--dark-success);
+      --success-bg: rgba(48, 209, 88, 0.15);
+      --warning: var(--dark-warning);
+      --warning-bg: rgba(255, 159, 10, 0.16);
+      --danger: var(--dark-danger);
+      --keycap-top: var(--dark-keycap-top);
+      --keycap-bottom: var(--dark-keycap-bottom);
+      --keycap-border: rgba(255, 255, 255, 0.14);
+      --window-shadow: 0 28px 70px rgba(0, 0, 0, 0.58), 0 0 0 1px rgba(255, 255, 255, 0.12);
+      --menubar-bg: rgba(34, 34, 38, 0.78);
+      color-scheme: dark;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    ::selection {
+      background: var(--accent-soft);
+      color: var(--text);
+    }
+
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: var(--border-strong);
+      border-radius: 99px;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--bg-stage);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 28px 18px 40px;
+      gap: 18px;
+      -webkit-font-smoothing: antialiased;
+      font-variant-numeric: tabular-nums;
+      transition: background 200ms ease, color 200ms ease;
+    }
+
+    button, input, textarea, select {
+      font: inherit;
+      color: inherit;
+    }
+
+    button:focus-visible,
+    input:focus-visible,
+    textarea:focus-visible,
+    select:focus-visible {
+      outline: 2px solid var(--accent-border);
+      outline-offset: 2px;
+    }
+
+    /* Prototype stage controls & macOS Menu Bar preview */
+    .stage-toolbar {
+      width: 620px;
+      max-width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 8px 12px;
+      background: var(--menubar-bg);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      font-size: 12px;
+    }
+
+    .menubar-demo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .menubar-label {
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+
+    .menubar-icons {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 3px 8px;
+      border-radius: 6px;
+      background: var(--surface-muted);
+    }
+
+    .tray-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 16px;
+      border-radius: 4px;
+      font-size: 10.5px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      cursor: pointer;
+      transition: transform 120ms ease, opacity 150ms ease;
+    }
+
+    .tray-badge.active-v {
+      background: var(--text);
+      color: var(--bg-window);
+    }
+
+    .tray-badge.inactive-e {
+      border: 1.4px solid var(--text);
+      color: var(--text);
+      opacity: 0.72;
+    }
+
+    .stage-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .chip-btn {
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text-secondary);
+      border-radius: 7px;
+      padding: 4px 9px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 140ms ease, color 140ms ease, border-color 140ms ease;
+    }
+
+    .chip-btn:hover {
+      color: var(--text);
+      border-color: var(--border-strong);
+    }
+
+    .chip-btn[aria-pressed="true"] {
+      color: var(--text);
+      background: var(--surface-elevated);
+      border-color: var(--border-strong);
+      font-weight: 600;
+    }
+
+    /* macOS Native Window */
+    .mac-window {
+      width: 620px;
+      max-width: 100%;
+      height: 520px;
+      background: var(--bg-window);
+      border-radius: 12px;
+      box-shadow: var(--window-shadow);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      transition: background 200ms ease, box-shadow 200ms ease;
+    }
+
+    .titlebar {
+      height: 38px;
+      flex-shrink: 0;
+      display: grid;
+      grid-template-columns: 76px 1fr 76px;
+      align-items: center;
+      padding: 0 14px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-window);
+      user-select: none;
+    }
+
+    .traffic-lights {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .light {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      border: 0.5px solid rgba(0, 0, 0, 0.14);
+    }
+
+    .light.close { background: var(--traffic-close); }
+    .light.min { background: var(--traffic-min); }
+    .light.zoom { background: var(--traffic-zoom); }
+
+    .window-title {
+      text-align: center;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      letter-spacing: -0.01em;
+    }
+
+    /* Status Header */
+    .status-header {
+      padding: 14px 18px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: var(--bg-window);
+      flex-shrink: 0;
+    }
+
+    .monogram {
+      width: 40px;
+      height: 40px;
+      border-radius: 11px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      flex-shrink: 0;
+      transition: background 180ms cubic-bezier(0.22, 1, 0.36, 1), color 180ms ease, transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    .monogram.enabled {
+      background: var(--accent);
+      color: var(--on-accent);
+    }
+
+    .monogram.disabled {
+      background: var(--surface-muted);
+      color: var(--text-secondary);
+      border: 1px solid var(--border);
+    }
+
+    .status-copy {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .status-headline {
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: -0.015em;
+      line-height: 1.25;
+      color: var(--text);
+    }
+
+    .status-meta {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--text-secondary);
+      flex-wrap: wrap;
+    }
+
+    .status-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+
+    .ax-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 9px;
+      border-radius: 99px;
+      font-size: 11.5px;
+      font-weight: 550;
+      border: 1px solid transparent;
+      cursor: pointer;
+    }
+
+    .ax-pill.granted {
+      background: var(--success-bg);
+      color: var(--success);
+    }
+
+    .ax-pill.needed {
+      background: var(--warning-bg);
+      color: var(--warning);
+      border-color: rgba(255, 159, 10, 0.25);
+    }
+
+    .switch {
+      position: relative;
+      width: 38px;
+      height: 22px;
+      border-radius: 99px;
+      background: var(--border-strong);
+      border: none;
+      cursor: pointer;
+      transition: background 180ms ease;
+      padding: 2px;
+    }
+
+    .switch[aria-checked="true"] {
+      background: var(--accent);
+    }
+
+    .switch-thumb {
+      display: block;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--on-accent);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28);
+      transform: translateX(0);
+      transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    .switch[aria-checked="true"] .switch-thumb {
+      transform: translateX(16px);
+    }
+
+    /* Inline AX Recovery Banner */
+    .ax-banner {
+      margin: 0 18px 12px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      background: var(--warning-bg);
+      border: 1px solid rgba(255, 159, 10, 0.3);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      font-size: 12px;
+      flex-shrink: 0;
+    }
+
+    .ax-banner[hidden] {
+      display: none;
+    }
+
+    .ax-banner-copy {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      color: var(--text);
+      line-height: 1.4;
+    }
+
+    .ax-banner-copy strong {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 2px;
+    }
+
+    .ax-banner-copy span {
+      color: var(--text-secondary);
+      font-size: 12px;
+    }
+
+    .ax-banner-btns {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    /* Tabs */
+    .tab-bar-wrap {
+      padding: 0 18px 12px;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    .tab-bar {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 4px;
+      padding: 3px;
+      border-radius: 10px;
+      background: var(--surface-muted);
+    }
+
+    .tab-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      height: 28px;
+      border: none;
+      border-radius: 7px;
+      background: transparent;
+      color: var(--text-secondary);
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 140ms ease, color 140ms ease, box-shadow 140ms ease;
+    }
+
+    .tab-btn:hover {
+      color: var(--text);
+    }
+
+    .tab-btn[aria-selected="true"] {
+      background: var(--surface);
+      color: var(--text);
+      font-weight: 600;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08), 0 0 0 0.5px var(--border);
+    }
+
+    .tab-btn svg {
+      width: 14px;
+      height: 14px;
+      flex-shrink: 0;
+    }
+
+    /* Main Panel Area */
+    .tab-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px 18px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .tab-pane {
+      display: none;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .tab-pane.active {
+      display: flex;
+    }
+
+    /* Cards & Rows */
+    .surface-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    .card-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 12px 14px;
+    }
+
+    .card-row + .card-row {
+      border-top: 1px solid var(--border);
+    }
+
+    .card-row.disabled {
+      opacity: 0.45;
+      pointer-events: none;
+    }
+
+    .row-copy {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      min-width: 0;
+    }
+
+    .row-title {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .row-subtitle {
+      font-size: 12px;
+      line-height: 1.42;
+      color: var(--text-secondary);
+      max-width: 58ch;
+    }
+
+    .method-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .method-card {
+      text-align: left;
+      background: var(--surface);
+      border: 1.5px solid var(--border);
+      border-radius: 12px;
+      padding: 12px 14px;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      transition: border-color 140ms ease, background 140ms ease;
+    }
+
+    .method-card:hover {
+      border-color: var(--border-strong);
+    }
+
+    .method-card[aria-checked="true"] {
+      border-color: var(--accent-border);
+      background: var(--surface-elevated);
+    }
+
+    .method-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .method-name {
+      font-size: 13.5px;
+      font-weight: 600;
+    }
+
+    .method-check {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      border: 1.5px solid var(--border-strong);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      color: transparent;
+    }
+
+    .method-card[aria-checked="true"] .method-check {
+      background: var(--text);
+      border-color: var(--text);
+      color: var(--surface);
+    }
+
+    .method-desc {
+      font-size: 12px;
+      color: var(--text-secondary);
+      line-height: 1.38;
+    }
+
+    .mono-example {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      padding: 2px 6px;
+      border-radius: 5px;
+      background: var(--surface-muted);
+      color: var(--text);
+      display: inline-block;
+    }
+
+    /* Controls */
+    .macos-select {
+      background: var(--surface-elevated);
+      border: 1px solid var(--border-strong);
+      border-radius: 7px;
+      padding: 5px 10px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+
+    .btn {
+      border-radius: 7px;
+      padding: 5px 11px;
+      font-size: 12px;
+      font-weight: 500;
+      border: 1px solid var(--border-strong);
+      background: var(--surface-elevated);
+      cursor: pointer;
+      white-space: nowrap;
+      transition: transform 90ms ease, background 140ms ease;
+    }
+
+    .btn:active {
+      transform: scale(0.97);
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: var(--on-accent);
+      border-color: transparent;
+      font-weight: 550;
+    }
+
+    /* Tactile 3D Keycaps */
+    .keycap-group {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .keycap {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 24px;
+      height: 22px;
+      padding: 0 7px;
+      border-radius: 6px;
+      background: linear-gradient(180deg, var(--keycap-top) 0%, var(--keycap-bottom) 100%);
+      border: 1px solid var(--keycap-border);
+      border-bottom-width: 2px;
+      box-shadow: 0 1px 1px rgba(0, 0, 0, 0.06);
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .keycap-sm {
+      height: 20px;
+      min-width: 22px;
+      padding: 0 6px;
+      font-size: 11px;
+    }
+
+    .shortcut-stack {
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .shortcut-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .shortcut-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .preset-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding-top: 10px;
+      border-top: 1px solid var(--border);
+    }
+
+    .preset-pills {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .preset-btn {
+      padding: 4px 8px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--surface-elevated);
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+
+    .preset-btn[aria-pressed="true"] {
+      background: var(--text);
+      color: var(--surface);
+      border-color: var(--text);
+    }
+
+    .rec-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--danger);
+      display: inline-block;
+      margin-right: 5px;
+    }
+
+    /* Sandbox */
+    .sandbox-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .sandbox-status {
+      font-size: 12px;
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .sandbox-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--success);
+    }
+
+    .sandbox-editor-wrap {
+      position: relative;
+      background: var(--surface);
+      border: 1px solid var(--border-strong);
+      border-radius: 12px;
+      padding: 12px 14px;
+    }
+
+    .sandbox-textarea {
+      width: 100%;
+      height: 116px;
+      border: none;
+      background: transparent;
+      resize: none;
+      font-size: 14px;
+      line-height: 1.5;
+      caret-color: var(--accent);
+    }
+
+    .sandbox-textarea:focus {
+      outline: none;
+    }
+
+    .sandbox-editor-wrap:focus-within {
+      border-color: var(--accent-border);
+      box-shadow: 0 0 0 3px var(--accent-soft);
+    }
+
+    .sample-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .sample-chip {
+      border: 1px solid var(--border);
+      background: var(--surface);
+      border-radius: 8px;
+      padding: 5px 9px;
+      font-size: 12px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .sample-chip:hover {
+      border-color: var(--border-strong);
+      background: var(--surface-elevated);
+    }
+
+    .sample-chip code {
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      color: var(--text-secondary);
+    }
+
+    .inline-tokens {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      margin-top: 4px;
+    }
+
+    .token-tag {
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      padding: 2px 7px;
+      border-radius: 5px;
+      background: var(--surface-muted);
+      color: var(--text-secondary);
+    }
+
+    .hint-tag {
+      font-size: 11px;
+      padding: 2px 6px;
+      border-radius: 5px;
+      background: var(--surface-muted);
+      color: var(--text-secondary);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Open Design Preview Controls + Menu Bar Preview -->
+  <div class="stage-toolbar" data-od-id="menubar-preview" aria-label="Prototype controls and macOS menu bar icon preview">
+    <div class="menubar-demo">
+      <span class="menubar-label">Menu Bar Icon:</span>
+      <span class="menubar-icons">
+        <button type="button" class="tray-badge active-v" id="trayVBtn" title="Tiếng Việt đang bật">V</button>
+        <button type="button" class="tray-badge inactive-e" id="trayEBtn" title="Chế độ Tiếng Anh">E</button>
+      </span>
+    </div>
+    <div class="stage-actions">
+      <button type="button" class="chip-btn" id="toggleAxStateBtn" aria-pressed="false">Mô phỏng thiếu quyền AX</button>
+      <button type="button" class="chip-btn" id="toggleThemeBtn" aria-pressed="false">Chuyển Dark Mode</button>
+    </div>
+  </div>
+
+  <!-- Redesigned 620 x 520 macOS Settings Window -->
+  <main class="mac-window" role="application" aria-label="VietGo — Bộ gõ Tiếng Việt">
+    <header class="titlebar">
+      <div class="traffic-lights" aria-hidden="true">
+        <span class="light close"></span>
+        <span class="light min"></span>
+        <span class="light zoom"></span>
+      </div>
+      <div class="window-title">VietGo — Bộ gõ Tiếng Việt</div>
+      <div></div>
+    </header>
+
+    <!-- Persistent Status Header -->
+    <section class="status-header" data-od-id="status-header">
+      <div class="monogram enabled" id="monogramBadge" aria-hidden="true">V</div>
+      <div class="status-copy">
+        <div class="status-headline" id="statusHeadline">Tiếng Việt đang bật</div>
+        <div class="status-meta">
+          <span id="statusSummary">Telex • Dấu mới (hòa, khỏe, thủy)</span>
+          <span aria-hidden="true">•</span>
+          <span>Chuyển nhanh:</span>
+          <span class="keycap-group" id="headerKeycaps">
+            <span class="keycap keycap-sm">⌃</span>
+            <span class="keycap keycap-sm">Space</span>
+          </span>
+        </div>
+      </div>
+      <div class="status-actions">
+        <button type="button" class="ax-pill granted" id="axStatusPill">
+          <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M13.3 4.5 6.5 11.3 3 7.8"></path>
+          </svg>
+          <span id="axPillLabel">Đã cấp quyền</span>
+        </button>
+        <button type="button" class="switch" id="masterToggle" role="switch" aria-checked="true" aria-label="Bật tắt bộ gõ Tiếng Việt">
+          <span class="switch-thumb"></span>
+        </button>
+      </div>
+    </section>
+
+    <!-- Inline Accessibility Recovery Banner -->
+    <section class="ax-banner" id="axBanner" data-od-id="ax-banner" hidden>
+      <div class="ax-banner-copy">
+        <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;margin-top:2px;color:var(--warning)">
+          <path d="M8 2.2 14.2 13H1.8L8 2.2Z"></path>
+          <path d="M8 6.4v2.9"></path>
+          <circle cx="8" cy="11.3" r="0.6" fill="currentColor"></circle>
+        </svg>
+        <div>
+          <strong>Cần cấp quyền Trợ năng (Accessibility)</strong>
+          <span>Bật VietGo trong Privacy &amp; Security để nhận phím và bỏ dấu không gạch chân.</span>
+        </div>
+      </div>
+      <div class="ax-banner-btns">
+        <button type="button" class="btn">Làm mới quyền</button>
+        <button type="button" class="btn">Mở Cài đặt</button>
+        <button type="button" class="btn btn-primary">Cấp quyền</button>
+      </div>
+    </section>
+
+    <!-- 4-Tab Segmented Navigation -->
+    <nav class="tab-bar-wrap" data-od-id="tab-nav" aria-label="Nhóm thiết lập">
+      <div class="tab-bar" role="tablist">
+        <button type="button" class="tab-btn" role="tab" aria-selected="true" data-tab="input">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="1.5" y="3.5" width="13" height="9" rx="2"></rect>
+            <path d="M4.2 6.5h.6M6.8 6.5h.6M9.4 6.5h.6M11.8 6.5h.6M5 9.5h6"></path>
+          </svg>
+          <span>Bộ gõ</span>
+        </button>
+        <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="smart">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M8 2v2M8 12v2M2 8h2M12 8h2M4.2 4.2l1.2 1.2M10.6 10.6l1.2 1.2M11.8 4.2l-1.2 1.2M5.4 10.6l-1.2 1.2"></path>
+            <circle cx="8" cy="8" r="2.2"></circle>
+          </svg>
+          <span>Thông minh</span>
+        </button>
+        <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="shortcuts">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M5.5 5.5A1.7 1.7 0 1 1 5.5 2a1.7 1.7 0 0 1 1.7 1.7v8.6A1.7 1.7 0 1 1 5.5 14a1.7 1.7 0 0 1-1.7-1.7M10.5 5.5A1.7 1.7 0 1 1 12.2 3.8a1.7 1.7 0 0 1-1.7 1.7h-5v5h5a1.7 1.7 0 1 1 0 3.4 1.7 1.7 0 0 1-1.7-1.7"></path>
+          </svg>
+          <span>Phím tắt</span>
+        </button>
+        <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="sandbox">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M3 4.5h10M8 4.5v8M5.5 12.5h5"></path>
+          </svg>
+          <span>Gõ thử</span>
+        </button>
+      </div>
+    </nav>
+
+    <!-- Tab Panels -->
+    <div class="tab-content">
+      <!-- Tab 1: Bộ gõ -->
+      <section class="tab-pane active" id="pane-input" data-od-id="tab-input" role="tabpanel">
+        <div class="method-grid">
+          <button type="button" class="method-card" role="radio" aria-checked="true" data-method="Telex">
+            <div class="method-head">
+              <span class="method-name">Telex</span>
+              <span class="method-check" aria-hidden="true">✓</span>
+            </div>
+            <div class="method-desc">Bỏ dấu bằng phím chữ cái (s, f, r, x, j, w).</div>
+            <div><span class="mono-example">tieengs vieetj → tiếng việt</span></div>
+          </button>
+
+          <button type="button" class="method-card" role="radio" aria-checked="false" data-method="VNI">
+            <div class="method-head">
+              <span class="method-name">VNI</span>
+              <span class="method-check" aria-hidden="true">✓</span>
+            </div>
+            <div class="method-desc">Bỏ dấu bằng phím số (1–5 cho thanh, 6–8 mũ/râu).</div>
+            <div><span class="mono-example">tie61ng vie65t → tiếng việt</span></div>
+          </button>
+        </div>
+
+        <div class="surface-card">
+          <div class="card-row">
+            <div class="row-copy">
+              <div class="row-title">Quy tắc đặt dấu</div>
+              <div class="row-subtitle">Vị trí đặt dấu thanh với các vần oa, oe, uy không âm cuối.</div>
+            </div>
+            <select class="macos-select" id="toneStyleSelect" aria-label="Quy tắc đặt dấu">
+              <option value="Dấu mới (hòa, khỏe, thủy)" selected>Dấu mới (hòa, khỏe, thủy)</option>
+              <option value="Dấu cũ (hoà, khoẻ, thuỷ)">Dấu cũ (hoà, khoẻ, thuỷ)</option>
+            </select>
+          </div>
+
+          <div class="card-row" id="standaloneWRow">
+            <div class="row-copy">
+              <div class="row-title">
+                Gõ w đơn thành ư
+                <span class="hint-tag" id="vniOnlyNote1" hidden>Chỉ Telex</span>
+              </div>
+              <div class="row-subtitle">Nhấn w ngay sau phụ âm đầu để gõ nhanh ư (<span class="mono-example">nhw → như</span>, <span class="mono-example">wf → ừ</span>).</div>
+            </div>
+            <button type="button" class="switch" role="switch" aria-checked="true" aria-label="Gõ w đơn thành ư">
+              <span class="switch-thumb"></span>
+            </button>
+          </div>
+
+          <div class="card-row" id="bracketRow">
+            <div class="row-copy">
+              <div class="row-title">
+                Gõ tắt [ → ơ, ] → ư trong Telex
+                <span class="hint-tag" id="vniOnlyNote2" hidden>Chỉ Telex</span>
+              </div>
+              <div class="row-subtitle">Bật tùy chọn này nếu bạn quen gõ nhanh ngoặc vuông cho nguyên âm ơ và ư.</div>
+            </div>
+            <button type="button" class="switch" role="switch" aria-checked="false" aria-label="Gõ tắt [ và ] trong Telex">
+              <span class="switch-thumb"></span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Tab 2: Thông minh -->
+      <section class="tab-pane" id="pane-smart" data-od-id="tab-smart" role="tabpanel">
+        <div class="surface-card">
+          <div class="card-row">
+            <div class="row-copy">
+              <div class="row-title">Tự động khôi phục từ tiếng Anh &amp; code</div>
+              <div class="row-subtitle">Tự động trả về nguyên bản khi chuỗi phím không khớp âm tiết Việt hoặc khớp từ vựng tiếng Anh hợp lệ.</div>
+              <div class="inline-tokens">
+                <span class="token-tag">window</span>
+                <span class="token-tag">URL</span>
+                <span class="token-tag">design</span>
+                <span class="token-tag">refresh</span>
+                <span class="token-tag">password</span>
+              </div>
+            </div>
+            <button type="button" class="switch" role="switch" aria-checked="true" aria-label="Tự động khôi phục từ tiếng Anh">
+              <span class="switch-thumb"></span>
+            </button>
+          </div>
+
+          <div class="card-row">
+            <div class="row-copy">
+              <div class="row-title">Chống lặp / nuốt chữ trên trình duyệt &amp; Launcher</div>
+              <div class="row-subtitle">Tương thích inline autocomplete trên Chrome, Safari, Arc, Dia, Spotlight, Raycast và Microsoft Office (Word, Excel).</div>
+            </div>
+            <button type="button" class="switch" role="switch" aria-checked="true" aria-label="Chống lỗi lặp và nuốt chữ">
+              <span class="switch-thumb"></span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Tab 3: Phím tắt & Hệ thống -->
+      <section class="tab-pane" id="pane-shortcuts" data-od-id="tab-shortcuts" role="tabpanel">
+        <div class="surface-card">
+          <div class="shortcut-stack">
+            <div class="shortcut-top">
+              <div class="row-copy">
+                <div class="row-title">Phím tắt chuyển Việt / Anh</div>
+                <div class="row-subtitle">Mặc định <span class="mono-example">⌃ Space</span>. Nếu trùng phím tắt Input Source của macOS, hãy tắt trong System Settings → Keyboard.</div>
+              </div>
+              <div class="shortcut-controls">
+                <span class="keycap-group" id="shortcutKeycaps">
+                  <span class="keycap">⌃</span>
+                  <span class="keycap">Space</span>
+                </span>
+                <button type="button" class="btn" id="recordShortcutBtn">Đổi phím tắt…</button>
+              </div>
+            </div>
+
+            <div class="preset-row">
+              <span class="row-subtitle">Chọn nhanh mẫu phổ biến</span>
+              <div class="preset-pills" id="presetPills">
+                <button type="button" class="preset-btn" data-preset="⌃ Space" aria-pressed="true">⌃ Space</button>
+                <button type="button" class="preset-btn" data-preset="⌥ Z" aria-pressed="false">⌥ Z</button>
+                <button type="button" class="preset-btn" data-preset="⌘ ⇧" aria-pressed="false">⌘ ⇧</button>
+                <button type="button" class="preset-btn" data-preset="⌃ ⇧" aria-pressed="false">⌃ ⇧</button>
+                <button type="button" class="preset-btn" data-preset="Fn" aria-pressed="false">Fn</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="surface-card">
+          <div class="card-row">
+            <div class="row-copy">
+              <div class="row-title">Khởi động cùng macOS</div>
+              <div class="row-subtitle">Tự chạy VietGo ẩn trên thanh menu ngay khi đăng nhập macOS.</div>
+            </div>
+            <button type="button" class="switch" role="switch" aria-checked="true" aria-label="Khởi động cùng macOS">
+              <span class="switch-thumb"></span>
+            </button>
+          </div>
+
+          <div class="card-row">
+            <div class="row-copy">
+              <div class="row-title">Quyền Trợ năng (Accessibility)</div>
+              <div class="row-subtitle" id="axRowDetail">Đã cấp quyền — Bộ gõ đang hoạt động ổn định trên toàn hệ thống.</div>
+            </div>
+            <button type="button" class="btn">Làm mới quyền</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Tab 4: Gõ thử -->
+      <section class="tab-pane" id="pane-sandbox" data-od-id="tab-sandbox" role="tabpanel">
+        <div class="sandbox-header">
+          <div class="sandbox-status">
+            <span class="sandbox-dot" id="sandboxDot"></span>
+            <span id="sandboxStatusText">Đang hoạt động: Tiếng Việt (Telex)</span>
+          </div>
+          <button type="button" class="btn" id="clearSandboxBtn">Xóa nội dung</button>
+        </div>
+
+        <div class="sandbox-editor-wrap">
+          <textarea class="sandbox-textarea" id="sandboxTextarea" placeholder="Gõ thử tiếng Việt, từ tiếng Anh hoặc các trường hợp đặc biệt tại đây…"></textarea>
+        </div>
+
+        <div class="surface-card" style="padding:12px 14px;display:flex;flex-direction:column;gap:8px;">
+          <div class="row-subtitle" style="font-weight:600;color:var(--text);">Chạm mẫu để kiểm tra nhanh</div>
+          <div class="sample-chips" id="sampleChips">
+            <button type="button" class="sample-chip" data-sample="tiếng việt "><code>tieengs vieetj</code> → tiếng việt</button>
+            <button type="button" class="sample-chip" data-sample="trường học "><code>truongwf hocj</code> → trường học</button>
+            <button type="button" class="sample-chip" data-sample="URL "><code>URRL</code> → URL</button>
+            <button type="button" class="sample-chip" data-sample="design "><code>dessign</code> → design</button>
+            <button type="button" class="sample-chip" data-sample="ý "><code>ys</code> → ý</button>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    const tabs = document.querySelectorAll('.tab-btn');
+    const panes = document.querySelectorAll('.tab-pane');
+    const masterToggle = document.getElementById('masterToggle');
+    const monogram = document.getElementById('monogramBadge');
+    const statusHeadline = document.getElementById('statusHeadline');
+    const statusSummary = document.getElementById('statusSummary');
+    const toneStyleSelect = document.getElementById('toneStyleSelect');
+    const methodCards = document.querySelectorAll('.method-card');
+    const standaloneWRow = document.getElementById('standaloneWRow');
+    const bracketRow = document.getElementById('bracketRow');
+    const vniOnlyNote1 = document.getElementById('vniOnlyNote1');
+    const vniOnlyNote2 = document.getElementById('vniOnlyNote2');
+    const sandboxTextarea = document.getElementById('sandboxTextarea');
+    const sandboxStatusText = document.getElementById('sandboxStatusText');
+    const sandboxDot = document.getElementById('sandboxDot');
+    const toggleThemeBtn = document.getElementById('toggleThemeBtn');
+    const toggleAxStateBtn = document.getElementById('toggleAxStateBtn');
+    const axBanner = document.getElementById('axBanner');
+    const axStatusPill = document.getElementById('axStatusPill');
+    const axPillLabel = document.getElementById('axPillLabel');
+    const axRowDetail = document.getElementById('axRowDetail');
+    const recordShortcutBtn = document.getElementById('recordShortcutBtn');
+    const presetButtons = document.querySelectorAll('.preset-btn');
+    const shortcutKeycaps = document.getElementById('shortcutKeycaps');
+    const headerKeycaps = document.getElementById('headerKeycaps');
+
+    let isEnabled = true;
+    let currentMethod = 'Telex';
+    let currentShortcut = '⌃ Space';
+    let isRecording = false;
+
+    function syncHeaderSummary() {
+      monogram.textContent = isEnabled ? 'V' : 'E';
+      monogram.className = 'monogram ' + (isEnabled ? 'enabled' : 'disabled');
+      statusHeadline.textContent = isEnabled ? 'Tiếng Việt đang bật' : 'Đang ở chế độ Tiếng Anh';
+      statusSummary.textContent = currentMethod + ' • ' + toneStyleSelect.value;
+      sandboxStatusText.textContent = isEnabled
+        ? 'Đang hoạt động: Tiếng Việt (' + currentMethod + ')'
+        : 'Đang tạm tắt — Chế độ Tiếng Anh (E)';
+      sandboxDot.style.background = isEnabled ? 'var(--success)' : 'var(--text-tertiary)';
+    }
+
+    function renderKeycaps(container, shortcut, small) {
+      const parts = shortcut.split(' ');
+      container.innerHTML = parts
+        .map((p) => `<span class="keycap${small ? ' keycap-sm' : ''}">${p}</span>`)
+        .join('');
+    }
+
+    tabs.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        tabs.forEach((b) => b.setAttribute('aria-selected', 'false'));
+        panes.forEach((p) => p.classList.remove('active'));
+        btn.setAttribute('aria-selected', 'true');
+        document.getElementById('pane-' + btn.dataset.tab).classList.add('active');
+      });
+    });
+
+    document.querySelectorAll('.switch').forEach((sw) => {
+      sw.addEventListener('click', () => {
+        const next = sw.getAttribute('aria-checked') !== 'true';
+        sw.setAttribute('aria-checked', String(next));
+        if (sw === masterToggle) {
+          isEnabled = next;
+          syncHeaderSummary();
+        }
+      });
+    });
+
+    methodCards.forEach((card) => {
+      card.addEventListener('click', () => {
+        methodCards.forEach((c) => c.setAttribute('aria-checked', 'false'));
+        card.setAttribute('aria-checked', 'true');
+        currentMethod = card.dataset.method;
+        const isVni = currentMethod === 'VNI';
+        standaloneWRow.classList.toggle('disabled', isVni);
+        bracketRow.classList.toggle('disabled', isVni);
+        vniOnlyNote1.hidden = !isVni;
+        vniOnlyNote2.hidden = !isVni;
+        syncHeaderSummary();
+      });
+    });
+
+    toneStyleSelect.addEventListener('change', syncHeaderSummary);
+
+    presetButtons.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        currentShortcut = btn.dataset.preset;
+        presetButtons.forEach((b) => b.setAttribute('aria-pressed', String(b === btn)));
+        renderKeycaps(shortcutKeycaps, currentShortcut, false);
+        renderKeycaps(headerKeycaps, currentShortcut, true);
+        isRecording = false;
+        recordShortcutBtn.textContent = 'Đổi phím tắt…';
+      });
+    });
+
+    recordShortcutBtn.addEventListener('click', () => {
+      isRecording = !isRecording;
+      recordShortcutBtn.innerHTML = isRecording
+        ? '<span class="rec-dot"></span>Đang ghi… (Esc hủy)'
+        : 'Đổi phím tắt…';
+    });
+
+    document.querySelectorAll('.sample-chip').forEach((chip) => {
+      chip.addEventListener('click', () => {
+        sandboxTextarea.value += chip.dataset.sample;
+        sandboxTextarea.focus();
+      });
+    });
+
+    document.getElementById('clearSandboxBtn').addEventListener('click', () => {
+      sandboxTextarea.value = '';
+      sandboxTextarea.focus();
+    });
+
+    document.getElementById('trayVBtn').addEventListener('click', () => {
+      isEnabled = true;
+      masterToggle.setAttribute('aria-checked', 'true');
+      syncHeaderSummary();
+    });
+
+    document.getElementById('trayEBtn').addEventListener('click', () => {
+      isEnabled = false;
+      masterToggle.setAttribute('aria-checked', 'false');
+      syncHeaderSummary();
+    });
+
+    toggleThemeBtn.addEventListener('click', () => {
+      const dark = document.documentElement.getAttribute('data-theme') !== 'dark';
+      document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+      toggleThemeBtn.setAttribute('aria-pressed', String(dark));
+      toggleThemeBtn.textContent = dark ? 'Chuyển Light Mode' : 'Chuyển Dark Mode';
+    });
+
+    toggleAxStateBtn.addEventListener('click', () => {
+      const missing = axBanner.hidden;
+      axBanner.hidden = !missing;
+      toggleAxStateBtn.setAttribute('aria-pressed', String(missing));
+      axStatusPill.className = 'ax-pill ' + (missing ? 'needed' : 'granted');
+      axPillLabel.textContent = missing ? 'Cần cấp quyền' : 'Đã cấp quyền';
+      axRowDetail.textContent = missing
+        ? 'Chưa có quyền Trợ năng — Bấm Làm mới quyền hoặc mở Privacy & Security.'
+        : 'Đã cấp quyền — Bộ gõ đang hoạt động ổn định trên toàn hệ thống.';
+    });
+
+    syncHeaderSummary();
+  </script>
+</body>
+</html>
