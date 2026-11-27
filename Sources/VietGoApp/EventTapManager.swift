@@ -47,6 +47,7 @@ public final class EventTapManager: ObservableObject {
     private var isHIDTapActive: Bool = false
     private var isSessionOnConsole: Bool = true
     private var mouseMonitor: Any?
+    private var secondaryFocusRefreshWorkItem: DispatchWorkItem?
     private static let strippedModifierFlags: CGEventFlags = [
         .maskShift, .maskControl, .maskAlternate, .maskCommand, .maskAlphaShift, .maskSecondaryFn
     ]
@@ -131,7 +132,7 @@ public final class EventTapManager: ObservableObject {
     ]
 
     private init() {
-        AXUIElementSetMessagingTimeout(systemWideElement, 0.005)
+        AXUIElementSetMessagingTimeout(systemWideElement, 0.035)
         isSessionOnConsole = (CGSessionCopyCurrentDictionary() as? [String: Any])?[kCGSessionOnConsoleKey as String] as? Bool ?? true
         let initialBundle = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""
         frontmostBundleID = initialBundle
@@ -174,6 +175,8 @@ public final class EventTapManager: ObservableObject {
                 let didSwitchApp = (bundleID != strongSelf.frontmostBundleID)
                 strongSelf.pendingFocusRefreshWorkItem?.cancel()
                 strongSelf.pendingFocusRefreshWorkItem = nil
+                strongSelf.secondaryFocusRefreshWorkItem?.cancel()
+                strongSelf.secondaryFocusRefreshWorkItem = nil
                 strongSelf.focusGeneration &+= 1
                 strongSelf.frontmostBundleID = bundleID
                 strongSelf.cachedFocusedBundleID = bundleID
@@ -312,6 +315,20 @@ public final class EventTapManager: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
     }
 
+    private func scheduleFocusRefreshPair() {
+        scheduleDelayedFocusRefresh(after: 0.05)
+        secondaryFocusRefreshWorkItem?.cancel()
+        let followUp = DispatchWorkItem { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                self.secondaryFocusRefreshWorkItem = nil
+                self.refreshFocusedBundleAsync()
+            }
+        }
+        secondaryFocusRefreshWorkItem = followUp
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.18, execute: followUp)
+    }
+
     private func refreshFocusedBundleAsync() {
         guard isAccessibilityGranted, AXIsProcessTrusted() else { return }
         focusGeneration &+= 1
@@ -344,6 +361,7 @@ public final class EventTapManager: ObservableObject {
                    let focusedUIRef {
                     // swiftlint:disable:next force_cast
                     let uiElement = focusedUIRef as! AXUIElement
+                    AXUIElementSetMessagingTimeout(uiElement, 0.035)
                     var roleRef: CFTypeRef?
                     var role = ""
                     if AXUIElementCopyAttributeValue(uiElement, kAXRoleAttribute as CFString, &roleRef) == .success,
@@ -385,6 +403,8 @@ public final class EventTapManager: ObservableObject {
     public func stop() {
         pendingFocusRefreshWorkItem?.cancel()
         pendingFocusRefreshWorkItem = nil
+        secondaryFocusRefreshWorkItem?.cancel()
+        secondaryFocusRefreshWorkItem = nil
         pollTimer?.invalidate()
         pollTimer = nil
         watchdogTimer?.invalidate()
@@ -418,7 +438,7 @@ public final class EventTapManager: ObservableObject {
                     strongSelf.keyPressedDuringModifierHold = true
                 }
                 strongSelf.engine.reset(clearHistory: true)
-                strongSelf.scheduleDelayedFocusRefresh(after: 0.05)
+                strongSelf.scheduleFocusRefreshPair()
             }
         }
     }
@@ -432,6 +452,7 @@ public final class EventTapManager: ObservableObject {
 
     public func resetEngine() {
         engine.reset(clearHistory: true)
+        scheduleFocusRefreshPair()
     }
 
     private func setAccessibilityGranted(_ granted: Bool) {
@@ -747,7 +768,7 @@ public final class EventTapManager: ObservableObject {
                 injectReplacement(
                     backspaceCount: backspaceCount + extraBS,
                     text: text,
-                    useAutocompleteFix: settings.autocompleteFix,
+                    useAutocompleteFix: false,
                     proxy: proxy
                 )
                 return nil
@@ -757,6 +778,9 @@ public final class EventTapManager: ObservableObject {
         // Reset on navigation or control keys
         if navigationKeyCodes.contains(keyCode) {
             engine.reset(clearHistory: true)
+            if keyCode == 48 {
+                scheduleDelayedFocusRefresh(after: 0.06)
+            }
             return Unmanaged.passUnretained(event)
         }
 
@@ -898,20 +922,26 @@ public final class EventTapManager: ObservableObject {
         let applyTerminalPacing = isTerminalOrPTYApp(targetBundle)
         let sendCharByChar = isSafari && !applyAutocompleteFix
 
-        let backspaceStepDelay: UInt32 = (applyTerminalPacing || isMicrosoftOffice) ? 2000 : 1000
+        let backspaceStepDelay: UInt32 = (applyTerminalPacing || isMicrosoftOffice) ? 2000 : 250
         let afterBackspaceWait: UInt32 = isMicrosoftOffice
             ? 5000
-            : (applyTerminalPacing ? 4000 : (applyAutocompleteFix ? 2500 : 1500))
-        let chunkStepDelay: UInt32 = (applyTerminalPacing || isMicrosoftOffice) ? 2000 : 1500
-        let settleDelay: UInt32 = (applyTerminalPacing || isMicrosoftOffice) ? 3000 : 1000
+            : (applyTerminalPacing ? 4000 : (applyAutocompleteFix ? 800 : 500))
+        let chunkStepDelay: UInt32 = (applyTerminalPacing || isMicrosoftOffice) ? 2000 : 400
+        let settleDelay: UInt32 = (applyTerminalPacing || isMicrosoftOffice) ? 3000 : 150
 
         if applyAutocompleteFix {
-            // Use U+0259 (Latin Small Letter Schwa, lowercaseLetter) rather than whitespace (U+202F, which triggers
-            // macOS Inline Predictive Text acceptance such as `dep` -> `department`) or zero-width Format chars
-            // (U+2060, which WebKit can swallow without inserting a deletable code unit), while still dismissing
-            // browser omnibox inline autocomplete selections.
-            postUnicodeChunk([0x0259], source: source, proxy: proxy)
-            usleep(1000)
+            // Use U+3164 (Hangul Compatibility Filler, General Category OtherLetter) rather than U+0259
+            // (which renders an 8.98 px visible 'ə' glyph during WebKit/Chromium paints), whitespace U+202F
+            // (which triggers macOS Inline Predictive Text acceptance such as `dep` -> `department`), or
+            // zero-width Format chars U+2060 (which WebKit can swallow without inserting a deletable code unit).
+            // U+3164 has 0.00 px visual width and zero ink across system fonts, dismisses browser omnibox
+            // autocomplete cleanly, and is deleted by a single Backspace.
+            postUnicodeChunk([0x3164], source: source, proxy: proxy)
+            if applyTerminalPacing || isMicrosoftOffice {
+                usleep(1000)
+            } else {
+                usleep(300)
+            }
             postBackspaces(count: backspaceCount + 1, source: source, delayMicros: backspaceStepDelay, proxy: proxy)
             usleep(afterBackspaceWait)
         } else if backspaceCount > 0 {

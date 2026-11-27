@@ -124,6 +124,11 @@ final class IMEWorkerRunner {
                     }
                 }
             }
+            // Exit immediately when parent closes stdin so no stray HID event tap remains active
+            DispatchQueue.main.async {
+                EventTapManager.shared.stop()
+                exit(0)
+            }
         }
 
         app.run()

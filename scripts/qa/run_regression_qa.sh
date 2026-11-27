@@ -85,11 +85,12 @@ EOF
 
 swiftc -O -parse-as-library \
     scripts/qa/run_browser_host_qa.swift \
-    -framework AppKit -framework ApplicationServices -framework Carbon -framework WebKit \
+    -framework AppKit -framework ApplicationServices -framework AVFoundation -framework Carbon -framework CoreMedia -framework CoreVideo -framework WebKit \
     -o "$QA_APP_MACOS/BrowserHostQA"
 
 codesign --force --deep --sign - "$QA_APP" >/dev/null 2>&1
 
+pkill -x validate_fast_chat_e2e >/dev/null 2>&1 || true
 WAS_VIETGO_RUNNING=0
 if pgrep -x VietGo >/dev/null 2>&1; then
     WAS_VIETGO_RUNNING=1
@@ -98,6 +99,7 @@ fi
 
 SERVER_PID=""
 cleanup() {
+    pkill -x validate_fast_chat_e2e >/dev/null 2>&1 || true
     if [[ -n "$SERVER_PID" ]] && kill -0 "$SERVER_PID" >/dev/null 2>&1; then
         kill "$SERVER_PID" >/dev/null 2>&1 || true
     fi

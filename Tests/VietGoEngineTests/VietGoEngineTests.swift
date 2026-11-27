@@ -1073,4 +1073,29 @@ final class VietGoEngineTests: XCTestCase {
         XCTAssertEqual(simulateTyping("ddieuf \u{08}e").output, "điều")
         XCTAssertEqual(simulateTyping("ddieeuf \u{08}s").output, "điếu")
     }
+
+    func testRound6CodaBackspaceToneRepositionMinimalLCP() {
+        var eng1 = VietInputEngine(config: EngineConfig(inputMethod: .telex))
+        for ch in "hoafn" { _ = eng1.processKey(ch) }
+        XCTAssertEqual(eng1.currentWord, "hoàn")
+        XCTAssertEqual(eng1.handleBackspace(), .replace(backspaceCount: 3, text: "òa"))
+        XCTAssertEqual(eng1.currentWord, "hòa")
+
+        var eng2 = VietInputEngine(config: EngineConfig(inputMethod: .telex))
+        for ch in "toasn" { _ = eng2.processKey(ch) }
+        XCTAssertEqual(eng2.currentWord, "toán")
+        XCTAssertEqual(eng2.handleBackspace(), .replace(backspaceCount: 3, text: "óa"))
+        XCTAssertEqual(eng2.currentWord, "tóa")
+
+        var eng3 = VietInputEngine(config: EngineConfig(inputMethod: .telex))
+        for ch in "tiengs" { _ = eng3.processKey(ch) }
+        XCTAssertEqual(eng3.currentWord, "tiéng")
+        XCTAssertEqual(eng3.handleBackspace(), .passThrough)
+        XCTAssertEqual(eng3.currentWord, "tién")
+
+        XCTAssertEqual(
+            simulateTyping("hoafn\u{08} thanhf, toasn\u{08} ddieeuf\u{08}u vaf dduowcj ").output,
+            "hòa thành, tóa điều và được "
+        )
+    }
 }

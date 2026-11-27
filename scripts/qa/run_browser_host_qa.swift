@@ -10,7 +10,10 @@
 
 import AppKit
 @preconcurrency import ApplicationServices
+@preconcurrency import AVFoundation
 import Carbon
+import CoreMedia
+import CoreVideo
 import Foundation
 import WebKit
 
@@ -411,6 +414,301 @@ private func postServerRequest(_ path: String, jsonObject: Any? = nil) {
     _ = sem.wait(timeout: .now() + 2.0)
 }
 
+private struct UnsafeSendable<T>: @unchecked Sendable {
+    let value: T
+}
+
+@MainActor
+private final class InProcessQAVideoRecorder {
+    private let writerBox: UnsafeSendable<AVAssetWriter>
+    private let inputBox: UnsafeSendable<AVAssetWriterInput>
+    private let adaptorBox: UnsafeSendable<AVAssetWriterInputPixelBufferAdaptor>
+    private let encodeQueue = DispatchQueue(label: "org.vietgo.qa.video-encoder", qos: .utility)
+    private let startTime: CFAbsoluteTime
+    private let width = 960
+    private let height = 760
+    private var timer: Timer?
+    private var isCapturing = false
+    private var lastPTS = CMTime.invalid
+    private var currentCaseLabel: String = ""
+    private var frameCount: Int = 0
+
+    init?(outputURL: URL, suiteStartTime: CFAbsoluteTime) {
+        try? FileManager.default.createDirectory(at: outputURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? FileManager.default.removeItem(at: outputURL)
+        guard let w = try? AVAssetWriter(outputURL: outputURL, fileType: .mov) else { return nil }
+
+        let settings: [String: Any] = [
+            AVVideoCodecKey: AVVideoCodecType.h264,
+            AVVideoWidthKey: width,
+            AVVideoHeightKey: height,
+            AVVideoCompressionPropertiesKey: [
+                AVVideoAverageBitRateKey: 3_500_000,
+                AVVideoMaxKeyFrameIntervalKey: 30
+            ]
+        ]
+        let writerInput = AVAssetWriterInput(mediaType: .video, outputSettings: settings)
+        writerInput.expectsMediaDataInRealTime = true
+        let bufferAttrs: [String: Any] = [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+            kCVPixelBufferWidthKey as String: width,
+            kCVPixelBufferHeightKey as String: height
+        ]
+        let pbAdaptor = AVAssetWriterInputPixelBufferAdaptor(
+            assetWriterInput: writerInput,
+            sourcePixelBufferAttributes: bufferAttrs
+        )
+        guard w.canAdd(writerInput) else { return nil }
+        w.add(writerInput)
+        guard w.startWriting() else { return nil }
+        w.startSession(atSourceTime: .zero)
+
+        self.writerBox = UnsafeSendable(value: w)
+        self.inputBox = UnsafeSendable(value: writerInput)
+        self.adaptorBox = UnsafeSendable(value: pbAdaptor)
+        self.startTime = suiteStartTime
+    }
+
+    func setCaseLabel(_ label: String) {
+        currentCaseLabel = label
+    }
+
+    func start(capturing webView: WKWebView) {
+        let t = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self, weak webView] _ in
+            Task { @MainActor in
+                guard let self, let webView else { return }
+                self.captureFrame(from: webView)
+            }
+        }
+        RunLoop.main.add(t, forMode: .common)
+        timer = t
+    }
+
+    private func captureFrame(from webView: WKWebView) {
+        guard !isCapturing, inputBox.value.isReadyForMoreMediaData else { return }
+        let elapsed = max(0.0, CFAbsoluteTimeGetCurrent() - startTime)
+        let pts = CMTime(seconds: elapsed, preferredTimescale: 600)
+        if lastPTS.isValid && CMTimeCompare(pts, lastPTS) <= 0 {
+            return
+        }
+
+        isCapturing = true
+        let config = WKSnapshotConfiguration()
+        config.snapshotWidth = NSNumber(value: width)
+        let label = currentCaseLabel
+        let secText = String(format: "%.2fs", elapsed)
+        let width = self.width
+        let height = self.height
+        let inputBox = self.inputBox
+        let adaptorBox = self.adaptorBox
+
+        webView.takeSnapshot(with: config) { [weak self] image, _ in
+            guard let self else { return }
+            guard let image,
+                  let rawCGImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+                self.isCapturing = false
+                return
+            }
+            let cgBox = UnsafeSendable(value: rawCGImage)
+
+            self.encodeQueue.async { [weak self] in
+                let cgImage = cgBox.value
+                let writerInput = inputBox.value
+                let pbAdaptor = adaptorBox.value
+                var encoded = false
+                if let pool = pbAdaptor.pixelBufferPool {
+                    var pbOut: CVPixelBuffer?
+                    if CVPixelBufferPoolCreatePixelBuffer(nil, pool, &pbOut) == kCVReturnSuccess,
+                       let pb = pbOut {
+                        CVPixelBufferLockBaseAddress(pb, [])
+                        if let ctx = CGContext(
+                            data: CVPixelBufferGetBaseAddress(pb),
+                            width: width,
+                            height: height,
+                            bitsPerComponent: 8,
+                            bytesPerRow: CVPixelBufferGetBytesPerRow(pb),
+                            space: CGColorSpaceCreateDeviceRGB(),
+                            bitmapInfo: CGBitmapInfo.byteOrder32Little.rawValue | CGImageAlphaInfo.premultipliedFirst.rawValue
+                        ) {
+                            ctx.interpolationQuality = .high
+                            ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+
+                            let nsCtx = NSGraphicsContext(cgContext: ctx, flipped: false)
+                            NSGraphicsContext.saveGraphicsState()
+                            NSGraphicsContext.current = nsCtx
+                            let badgeText = " \(label) • \(secText) " as NSString
+                            let attrs: [NSAttributedString.Key: Any] = [
+                                .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .semibold),
+                                .foregroundColor: NSColor.white
+                            ]
+                            let sz = badgeText.size(withAttributes: attrs)
+                            let pillRect = NSRect(x: CGFloat(width) - sz.width - 18, y: CGFloat(height) - sz.height - 14, width: sz.width + 8, height: sz.height + 6)
+                            NSColor.black.withAlphaComponent(0.72).setFill()
+                            NSBezierPath(roundedRect: pillRect, xRadius: 5, yRadius: 5).fill()
+                            badgeText.draw(at: NSPoint(x: pillRect.minX + 4, y: pillRect.minY + 3), withAttributes: attrs)
+                            NSGraphicsContext.restoreGraphicsState()
+                        }
+                        CVPixelBufferUnlockBaseAddress(pb, [])
+                        if writerInput.isReadyForMoreMediaData {
+                            encoded = pbAdaptor.append(pb, withPresentationTime: pts)
+                        }
+                    }
+                }
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    if encoded {
+                        self.lastPTS = pts
+                        self.frameCount += 1
+                    }
+                    self.isCapturing = false
+                }
+            }
+        }
+    }
+
+    func finish() -> Int {
+        timer?.invalidate()
+        timer = nil
+        let drainDeadline = Date().addingTimeInterval(1.0)
+        while isCapturing && Date() < drainDeadline {
+            RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.01))
+        }
+        var done = false
+        let inputBox = self.inputBox
+        let writerBox = self.writerBox
+        encodeQueue.async {
+            inputBox.value.markAsFinished()
+            writerBox.value.finishWriting {
+                DispatchQueue.main.async {
+                    done = true
+                }
+            }
+        }
+        let finishDeadline = Date().addingTimeInterval(5.0)
+        while !done && Date() < finishDeadline {
+            RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.01))
+        }
+        return frameCount
+    }
+}
+
+private func buildStartTelemetryJS(
+    selector: String,
+    caseName: String,
+    hasStepProbe: Bool,
+    hasIntentionalDeleteOrClear: Bool
+) -> String {
+    guard let selData = try? JSONEncoder().encode(selector),
+          let nameData = try? JSONEncoder().encode(caseName),
+          let selJSON = String(data: selData, encoding: .utf8),
+          let nameJSON = String(data: nameData, encoding: .utf8) else {
+        return ""
+    }
+    return """
+    (() => {
+      if (window.__vgStopCaseMonitor) { window.__vgStopCaseMonitor(); }
+      const el = document.querySelector(\(selJSON));
+      const readVal = () => !el ? '' : ('value' in el ? el.value : (el.textContent || ''));
+      const t0 = performance.now();
+      let active = true;
+      let phase = \(hasStepProbe ? "'prefix'" : "'input'");
+      const hasIntentionalDelete = \(hasIntentionalDeleteOrClear ? "true" : "false");
+      let lastRafAt = t0;
+      let maxRafGapMs = 0;
+      let rafGapsOver35ms = [];
+      let rafGapsOver20ms = 0;
+      let inputEventCount = 0;
+      let visibleSentinelFrames = [];
+      let zeroWidthSentinelFrames = [];
+      let shrinkEvents = [];
+      let unexpectedShrinkEvents = [];
+      let growInDeleteEvents = [];
+      let prevFrameVal = readVal();
+      let rafHandle = 0;
+
+      const onInput = () => {
+        inputEventCount++;
+      };
+      if (el) el.addEventListener('input', onInput);
+
+      const tick = (now) => {
+        if (!active) return;
+        const dt = now - lastRafAt;
+        lastRafAt = now;
+        if (dt > maxRafGapMs) maxRafGapMs = Math.round(dt * 10) / 10;
+        if (dt > 20) rafGapsOver20ms++;
+        if (dt > 35 && rafGapsOver35ms.length < 25) {
+          rafGapsOver35ms.push({ tMs: Math.round(now - t0), gapMs: Math.round(dt * 10) / 10, phase });
+        }
+        const cur = readVal();
+        if (cur.includes('\\u0259') && visibleSentinelFrames.length < 25) {
+          visibleSentinelFrames.push({ tMs: Math.round(now - t0), phase, tail: cur.slice(-16) });
+        }
+        if (cur.includes('\\u3164') && zeroWidthSentinelFrames.length < 25) {
+          zeroWidthSentinelFrames.push({ tMs: Math.round(now - t0), phase, tail: cur.slice(-16) });
+        }
+        if (cur !== prevFrameVal) {
+          const prevArr = Array.from(prevFrameVal);
+          const curArr = Array.from(cur);
+          if (curArr.length < prevArr.length && phase !== 'delete') {
+            const ev = {
+              tMs: Math.round(now - t0),
+              phase,
+              prevLen: prevArr.length,
+              curLen: curArr.length,
+              prevTail: prevArr.slice(-10).join(''),
+              curTail: curArr.slice(-10).join('')
+            };
+            if (shrinkEvents.length < 40) shrinkEvents.push(ev);
+            if (!hasIntentionalDelete && unexpectedShrinkEvents.length < 40) {
+              unexpectedShrinkEvents.push(ev);
+            }
+          }
+          if (curArr.length > prevArr.length && phase === 'delete' && growInDeleteEvents.length < 25) {
+            growInDeleteEvents.push({
+              tMs: Math.round(now - t0),
+              prevLen: prevArr.length,
+              curLen: curArr.length,
+              prevTail: prevArr.slice(-10).join(''),
+              curTail: curArr.slice(-10).join('')
+            });
+          }
+          prevFrameVal = cur;
+        }
+        rafHandle = requestAnimationFrame(tick);
+      };
+      rafHandle = requestAnimationFrame(tick);
+
+      window.__vgSetCasePhase = (p) => { phase = p; };
+      window.__vgStopCaseMonitor = () => {
+        active = false;
+        if (rafHandle) cancelAnimationFrame(rafHandle);
+        if (el) el.removeEventListener('input', onInput);
+        return {
+          name: \(nameJSON),
+          durationMs: Math.round(performance.now() - t0),
+          inputEventCount,
+          maxRafGapMs,
+          rafGapsOver20ms,
+          rafGapsOver35ms,
+          sentinelVisibleCount: visibleSentinelFrames.length,
+          visibleSentinelCount: visibleSentinelFrames.length,
+          visibleSentinelFrames,
+          zeroWidthSentinelCount: zeroWidthSentinelFrames.length,
+          zeroWidthSentinelFrames,
+          shrinkEventCount: shrinkEvents.length,
+          shrinkEvents,
+          unexpectedShrinkCount: unexpectedShrinkEvents.length,
+          unexpectedShrinkEvents,
+          growInDeleteCount: growInDeleteEvents.length,
+          growInDeleteEvents
+        };
+      };
+      return true;
+    })()
+    """
+}
+
 private final class IMEWorkerClient {
     private let process: Process
     private let stdinPipe = Pipe()
@@ -542,12 +840,31 @@ enum BrowserHostQAMain {
         app.mainMenu = mainMenu
 
         let coordinator = BrowserHostCoordinator()
+        coordinator.window.orderFrontRegardless()
         coordinator.window.makeKeyAndOrderFront(nil)
-        app.activate(ignoringOtherApps: true)
+        NSApp.activate()
 
         let selfPID = ProcessInfo.processInfo.processIdentifier
-        let readyDeadline = Date().addingTimeInterval(6.0)
+        let readyDeadline = Date().addingTimeInterval(8.0)
+        var clickedToActivate = false
         while Date() < readyDeadline {
+            if NSWorkspace.shared.frontmostApplication?.processIdentifier != selfPID {
+                NSApp.activate()
+                NSRunningApplication.current.activate(options: .activateAllWindows)
+                coordinator.window.orderFrontRegardless()
+                coordinator.window.makeKeyAndOrderFront(nil)
+                if !clickedToActivate, let primaryH = NSScreen.screens.first?.frame.height {
+                    clickedToActivate = true
+                    let wf = coordinator.window.frame
+                    let cgPt = CGPoint(x: wf.midX, y: primaryH - wf.midY)
+                    if let down = CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: cgPt, mouseButton: .left),
+                       let up = CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: cgPt, mouseButton: .left) {
+                        down.post(tap: .cghidEventTap)
+                        usleep(12_000)
+                        up.post(tap: .cghidEventTap)
+                    }
+                }
+            }
             pump(for: 0.05)
             if NSWorkspace.shared.frontmostApplication?.processIdentifier == selfPID &&
                 coordinator.window.isKeyWindow &&
@@ -557,7 +874,8 @@ enum BrowserHostQAMain {
         }
 
         guard NSWorkspace.shared.frontmostApplication?.processIdentifier == selfPID && coordinator.isLoaded() else {
-            fputs("ERROR: BrowserHostQA failed to acquire focus or load http://127.0.0.1:8765\n", stderr)
+            fputs("ERROR: BrowserHostQA failed to acquire focus or load http://127.0.0.1:8765 (frontmost=\(NSWorkspace.shared.frontmostApplication?.processIdentifier ?? -1), self=\(selfPID), key=\(coordinator.window.isKeyWindow), loaded=\(coordinator.isLoaded()))\n", stderr)
+            workerClient?.stop()
             exit(1)
         }
 
@@ -759,6 +1077,16 @@ enum BrowserHostQAMain {
                 input: "mootj ddieeuf quan trongj, ddieu \u{08}ef hay ddieuf \u{08}e vaf dies lies yess ",
                 expected: "một điều quan trọng, điều hay điều và dies lies yess ",
                 isChatSubmit: false
+            ),
+
+            // === Round 6 Case (Sub-Frame Tone-Shift Backspace & Zero-Width Sentinel in Omnibox) ===
+            BrowserQACase(
+                name: "R6_01_ToneShiftBackspace_And_OmniboxZeroFlicker",
+                selector: "#omnibox-input",
+                speed: fast140,
+                input: "hoafn\u{08} thanhf, toasn\u{08} ddieeuf\u{08}u vaf dduowcj ",
+                expected: "hòa thành, tóa điều và được ",
+                isChatSubmit: false
             )
             // APPEND NEW ROUND CASES (`R6_XX_...`) BELOW THIS LINE
         ]
@@ -776,9 +1104,19 @@ enum BrowserHostQAMain {
         }
 
         let suiteStart = CFAbsoluteTimeGetCurrent()
+        let videoPath = ProcessInfo.processInfo.environment["VIETGO_QA_VIDEO_PATH"]
+        let telemetryPath = ProcessInfo.processInfo.environment["VIETGO_QA_TELEMETRY_PATH"]
+        let recorder: InProcessQAVideoRecorder? = {
+            guard let videoPath, !videoPath.isEmpty else { return nil }
+            let r = InProcessQAVideoRecorder(outputURL: URL(fileURLWithPath: videoPath), suiteStartTime: suiteStart)
+            r?.start(capturing: coordinator.webView)
+            return r
+        }()
+
         var passedCount = 0
         var activeMethod = "telex"
         var jsonRecords: [[String: Any]] = []
+        var telemetryRecords: [[String: Any]] = []
 
         for item in cases {
             if let workerClient {
@@ -791,9 +1129,23 @@ enum BrowserHostQAMain {
             }
 
             let caseStart = CFAbsoluteTimeGetCurrent()
+            let suiteOffsetMs = Int((caseStart - suiteStart) * 1000.0)
+            recorder?.setCaseLabel(item.name)
             guard coordinator.focusAndClickSelector(item.selector, postFocusJS: item.postFocusJS) else {
                 print("FAIL \(item.name) (\(item.selector)): failed to focus/click")
                 continue
+            }
+            if telemetryPath != nil {
+                let intentionalDelete = item.input.contains("\u{08}") ||
+                    item.input.contains("\u{E004}") ||
+                    item.input.contains("\u{E003}") ||
+                    item.isChatSubmit
+                _ = coordinator.evalJS(buildStartTelemetryJS(
+                    selector: item.selector,
+                    caseName: item.name,
+                    hasStepProbe: item.stepDeleteProbe != nil,
+                    hasIntentionalDeleteOrClear: intentionalDelete
+                ))
             }
             pump(for: 0.50)
 
@@ -832,6 +1184,9 @@ enum BrowserHostQAMain {
                         }
                     }
 
+                    if telemetryPath != nil {
+                        _ = coordinator.evalJS("window.__vgSetCasePhase && window.__vgSetCasePhase('delete')")
+                    }
                     var currentText = fullActual
                     for stepIdx in 1...probe.deleteSteps {
                         let bsSem = DispatchSemaphore(value: 0)
@@ -861,6 +1216,9 @@ enum BrowserHostQAMain {
                     }
 
                     if stepProbeError == nil && burstError == nil {
+                        if telemetryPath != nil {
+                            _ = coordinator.evalJS("window.__vgSetCasePhase && window.__vgSetCasePhase('tail')")
+                        }
                         let tailSem = DispatchSemaphore(value: 0)
                         DispatchQueue.global(qos: .userInteractive).async {
                             do {
@@ -906,7 +1264,10 @@ enum BrowserHostQAMain {
             }
             let totalChars = item.stepDeleteProbe.map { $0.prefixToType.count + $0.deleteSteps + $0.tailInput.count } ?? item.input.count
             let wpm = Int((Double(totalChars) / 5.0) / max(burstMs / 60_000.0, 0.001))
-            let hasSentinelLeak = actual.contains("\u{202F}") || actual.contains("\u{2060}") || actual.contains("\u{0259}")
+            let hasSentinelLeak = actual.contains("\u{202F}") ||
+                actual.contains("\u{2060}") ||
+                actual.contains("\u{0259}") ||
+                actual.contains("\u{3164}")
             let isNFC = (actual == actual.precomposedStringWithCanonicalMapping)
             let ok = (burstError == nil) && (stepProbeError == nil) && (actual == item.expected) && domOk && !hasSentinelLeak && isNFC
             let status = ok ? "PASS" : "FAIL"
@@ -922,6 +1283,11 @@ enum BrowserHostQAMain {
                 "actual": stepProbeError ?? actual,
                 "expected": item.expected
             ]
+            if telemetryPath != nil,
+               var tel = coordinator.evalJS("window.__vgStopCaseMonitor ? window.__vgStopCaseMonitor() : null") as? [String: Any] {
+                tel["suiteOffsetMs"] = suiteOffsetMs
+                telemetryRecords.append(tel)
+            }
             jsonRecords.append(record)
             postServerRequest("/api/results", jsonObject: record)
 
@@ -936,6 +1302,19 @@ enum BrowserHostQAMain {
             workerClient.send("METHOD telex")
         }
         workerClient?.stop()
+
+        if let recorder, let videoPath {
+            let encodedFrames = recorder.finish()
+            print("==> Browser QA Video saved (\(encodedFrames) frames): \(videoPath)")
+        }
+        if let telemetryPath, !telemetryPath.isEmpty {
+            let tURL = URL(fileURLWithPath: telemetryPath)
+            try? FileManager.default.createDirectory(at: tURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            if let data = try? JSONSerialization.data(withJSONObject: ["cases": telemetryRecords], options: [.prettyPrinted, .sortedKeys]) {
+                try? data.write(to: tURL)
+                print("==> Browser QA Frame Telemetry saved: \(telemetryPath)")
+            }
+        }
 
         let totalMs = Int((CFAbsoluteTimeGetCurrent() - suiteStart) * 1000.0)
         let avgMs = totalMs / max(cases.count, 1)
