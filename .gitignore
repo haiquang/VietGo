@@ -8,4 +8,7 @@ xcuserdata/
 *.xcworkspace/
 *~
 .env
+scripts/qa/.build/
+test-results/
+AGENTS.md
 
