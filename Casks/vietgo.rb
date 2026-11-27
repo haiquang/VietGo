@@ -1,6 +1,6 @@
 cask "vietgo" do
-  version "1.0.2"
-  sha256 "a6cfc9679101cb8b32602b330bb1843cec327df5929285255419fab690e7afe3"
+  version "1.0.3"
+  sha256 "7397ca223b7d187d64656971bb4e2b03c738c9f0c8917f9bbed9009cc34f062e"
 
   url "https://github.com/haiquang/VietGo/releases/download/v#{version}/VietGo-v#{version}-macos-arm64.dmg"
   name "VietGo"
