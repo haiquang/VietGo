@@ -7,13 +7,15 @@ public struct VietInputEngine: Sendable {
         let rawKeys: [Character]
         let displayed: [Character]
         let separator: Character
-        let isLiteralToken: Bool
+        let hasContextLiteralLatch: Bool
+        let isAutoRestoredWord: Bool
     }
 
     private var rawKeys: [Character] = []
     private var displayed: [Character] = []
     private var lastNonWordChar: Character?
-    private var isLiteralToken: Bool = false
+    private var hasContextLiteralLatch: Bool = false
+    private var isAutoRestoredWord: Bool = false
     private var prev2StreamChar: Character?
     private var prev1StreamChar: Character?
     private var urlLiteralDepth: Int = 0
@@ -62,8 +64,9 @@ public struct VietInputEngine: Sendable {
         guard isWordChar else {
             // Check if finalizing an open consonant-initial `ă`/`â` word on Space/punctuation (`ddaxa `)
             var finalAction: EngineAction = .passThrough
-            var committedLiteral = isLiteralToken
-            if !displayed.isEmpty && !isLiteralToken {
+            let committedContextLatch = hasContextLiteralLatch
+            var committedAutoRestored = isAutoRestoredWord
+            if !displayed.isEmpty && !hasContextLiteralLatch && !isAutoRestoredWord {
                 let midWordResult = SyllableComposer.composeResult(
                     rawKeys: rawKeys,
                     config: config,
@@ -91,7 +94,7 @@ public struct VietInputEngine: Sendable {
                 if finalizedResult.isEscaped ||
                     midWordResult.didAutoRestore ||
                     (finalizedResult.didAutoRestore && (SyllableComposer.isKnownEnglishToken(String(rawKeys)) || rawKeys.allSatisfy({ $0.isUppercase }))) {
-                    committedLiteral = true
+                    committedAutoRestored = true
                 }
             }
 
@@ -100,14 +103,16 @@ public struct VietInputEngine: Sendable {
                 rawKeys: rawKeys,
                 displayed: displayed,
                 separator: char,
-                isLiteralToken: committedLiteral
+                hasContextLiteralLatch: committedContextLatch,
+                isAutoRestoredWord: committedAutoRestored
             ))
             if committedHistory.count > maxHistoryCount {
                 committedHistory.removeFirst()
             }
 
             lastNonWordChar = char
-            isLiteralToken = false
+            hasContextLiteralLatch = false
+            isAutoRestoredWord = false
             rawKeys.removeAll(keepingCapacity: true)
             displayed.removeAll(keepingCapacity: true)
 
@@ -133,7 +138,8 @@ public struct VietInputEngine: Sendable {
            let sep = lastNonWordChar,
            (sep == "'" || sep == "\u{2019}"),
            let prev = committedHistory.last,
-           !prev.isLiteralToken,
+           !prev.hasContextLiteralLatch,
+           !prev.isAutoRestoredWord,
            prev.separator == sep,
            prev.displayed != prev.rawKeys,
            let lastRaw = prev.rawKeys.last,
@@ -144,9 +150,11 @@ public struct VietInputEngine: Sendable {
                 rawKeys: prev.rawKeys,
                 displayed: prev.rawKeys,
                 separator: sep,
-                isLiteralToken: true
+                hasContextLiteralLatch: true,
+                isAutoRestoredWord: prev.isAutoRestoredWord
             )
-            isLiteralToken = true
+            hasContextLiteralLatch = true
+            isAutoRestoredWord = false
             rawKeys = [char]
             displayed = [char]
             lastNonWordChar = nil
@@ -156,7 +164,8 @@ public struct VietInputEngine: Sendable {
 
         // Keep entire URL (`*://...`) and home-path (`~/...`) segments literal until whitespace/delimiter
         if displayed.isEmpty, urlLiteralDepth > 0 {
-            isLiteralToken = true
+            hasContextLiteralLatch = true
+            isAutoRestoredWord = false
             urlLiteralDepth += 1
             rawKeys.append(char)
             displayed.append(char)
@@ -172,7 +181,8 @@ public struct VietInputEngine: Sendable {
            (char == "w" || char == "W"),
            let prev = lastNonWordChar,
            isPathOrSymbolPrefix(prev) {
-            isLiteralToken = true
+            hasContextLiteralLatch = true
+            isAutoRestoredWord = false
             rawKeys.append(char)
             displayed.append(char)
             lastNonWordChar = nil
@@ -185,7 +195,7 @@ public struct VietInputEngine: Sendable {
         }
         recordStreamChar(char)
 
-        if isLiteralToken {
+        if hasContextLiteralLatch || isAutoRestoredWord {
             rawKeys.append(char)
             displayed.append(char)
             lastNonWordChar = nil
@@ -220,11 +230,13 @@ public struct VietInputEngine: Sendable {
             if let last = committedHistory.popLast() {
                 rawKeys = last.rawKeys
                 displayed = last.displayed
-                isLiteralToken = last.isLiteralToken
+                hasContextLiteralLatch = last.hasContextLiteralLatch
+                isAutoRestoredWord = last.isAutoRestoredWord
                 lastNonWordChar = nil
             } else {
                 rawKeys.removeAll(keepingCapacity: true)
-                isLiteralToken = false
+                hasContextLiteralLatch = false
+                isAutoRestoredWord = false
                 lastNonWordChar = nil
             }
             return .passThrough
@@ -237,13 +249,26 @@ public struct VietInputEngine: Sendable {
         if afterBS.isEmpty {
             rawKeys.removeAll(keepingCapacity: true)
             displayed.removeAll(keepingCapacity: true)
-            isLiteralToken = false
+            hasContextLiteralLatch = false
+            isAutoRestoredWord = false
             return .passThrough
         }
 
-        if isLiteralToken {
+        if hasContextLiteralLatch {
             if !rawKeys.isEmpty {
                 rawKeys.removeLast()
+            }
+            displayed = afterBS
+            return .passThrough
+        }
+
+        if isAutoRestoredWord {
+            let check = checkComposablePrefix(afterBS)
+            if check.isComposable {
+                isAutoRestoredWord = false
+                rawKeys = check.canonicalRaw
+            } else {
+                rawKeys = afterBS
             }
             displayed = afterBS
             return .passThrough
@@ -263,9 +288,15 @@ public struct VietInputEngine: Sendable {
                     return makeReplaceAction(from: oldDisplayed, to: prevResult.characters)
                 }
             }
-            rawKeys = afterBS
+            let check = checkComposablePrefix(afterBS)
+            if check.isComposable {
+                isAutoRestoredWord = false
+                rawKeys = check.canonicalRaw
+            } else {
+                isAutoRestoredWord = true
+                rawKeys = afterBS
+            }
             displayed = afterBS
-            isLiteralToken = true
             return .passThrough
         }
 
@@ -274,10 +305,13 @@ public struct VietInputEngine: Sendable {
             if !droppedRaw.isEmpty && SyllableComposer.compose(rawKeys: droppedRaw, config: config) == afterBS {
                 rawKeys = droppedRaw
             } else {
-                rawKeys = VietnameseTables.canonicalRawKeys(
-                    fromDisplayed: afterBS,
-                    inputMethod: config.inputMethod
-                )
+                let check = checkComposablePrefix(afterBS)
+                if check.isComposable {
+                    rawKeys = check.canonicalRaw
+                } else {
+                    isAutoRestoredWord = true
+                    rawKeys = afterBS
+                }
             }
             displayed = afterBS
             return .passThrough
@@ -296,8 +330,8 @@ public struct VietInputEngine: Sendable {
         }
 
         // Never let Backspace expand or contract character count (`tién` + BS -> `tié`, `refre` + BS -> `refr`),
-        // and never inject synthetic replacements while Backspace is held in autorepeat.
-        if !allowToneReposition || recomposed.count != afterBS.count {
+        // never rewrite pure-ASCII prefixes, and never inject synthetic replacements while Backspace is held in autorepeat.
+        if !allowToneReposition || recomposed.count != afterBS.count || afterBS.allSatisfy(\.isASCII) {
             displayed = afterBS
             return .passThrough
         }
@@ -306,17 +340,56 @@ public struct VietInputEngine: Sendable {
         return makeReplaceAction(from: oldDisplayed, to: recomposed)
     }
 
+    /// Re-synchronizes active buffer state to match visible text before selection on Backspace.
+    public mutating func resyncToDisplayedWord(_ word: String) {
+        urlLiteralDepth = 0
+        prev2StreamChar = nil
+        prev1StreamChar = nil
+        lastNonWordChar = nil
+        hasContextLiteralLatch = false
+
+        let normalized = word.precomposedStringWithCanonicalMapping
+        let chars = Array(normalized)
+        guard !chars.isEmpty else {
+            rawKeys.removeAll(keepingCapacity: true)
+            displayed.removeAll(keepingCapacity: true)
+            isAutoRestoredWord = false
+            return
+        }
+
+        let check = checkComposablePrefix(chars)
+        displayed = chars
+        if check.isComposable {
+            rawKeys = check.canonicalRaw
+            isAutoRestoredWord = false
+        } else {
+            rawKeys = chars
+            isAutoRestoredWord = true
+        }
+    }
+
     public mutating func reset(clearHistory: Bool = true) {
         rawKeys.removeAll(keepingCapacity: true)
         displayed.removeAll(keepingCapacity: true)
         lastNonWordChar = nil
-        isLiteralToken = false
+        hasContextLiteralLatch = false
+        isAutoRestoredWord = false
         prev2StreamChar = nil
         prev1StreamChar = nil
         urlLiteralDepth = 0
         if clearHistory {
             committedHistory.removeAll(keepingCapacity: true)
         }
+    }
+
+    private func checkComposablePrefix(_ chars: [Character]) -> (isComposable: Bool, canonicalRaw: [Character]) {
+        let canonical = VietnameseTables.canonicalRawKeys(
+            fromDisplayed: chars,
+            inputMethod: config.inputMethod
+        )
+        let probe = SyllableComposer.composeResult(rawKeys: canonical, config: config)
+        let ok = !probe.didAutoRestore && !probe.isEscaped && probe.characters == chars
+        return (ok, canonical)
     }
 
     private mutating func makeReplaceAction(from oldDisplayed: [Character], to newDisplayed: [Character]) -> EngineAction {

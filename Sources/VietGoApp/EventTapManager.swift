@@ -23,6 +23,7 @@ public final class EventTapManager: ObservableObject {
     private var watchdogTimer: Timer?
 
     private let systemWideElement = AXUIElementCreateSystemWide()
+    private let backspaceAXElement = AXUIElementCreateSystemWide()
     private let privateEventSource = CGEventSource(stateID: .privateState)
     private let axQueryQueue = DispatchQueue(label: "org.vietgo.VietGo.ax-query", qos: .userInitiated)
     private var pendingFocusRefreshWorkItem: DispatchWorkItem?
@@ -48,6 +49,8 @@ public final class EventTapManager: ObservableObject {
     private var isSessionOnConsole: Bool = true
     private var mouseMonitor: Any?
     private var secondaryFocusRefreshWorkItem: DispatchWorkItem?
+    private var lastNonBackspaceKeyAt: CFAbsoluteTime = 0
+    private var lastReplacementAt: CFAbsoluteTime = 0
     private static let strippedModifierFlags: CGEventFlags = [
         .maskShift, .maskControl, .maskAlternate, .maskCommand, .maskAlphaShift, .maskSecondaryFn
     ]
@@ -133,6 +136,7 @@ public final class EventTapManager: ObservableObject {
 
     private init() {
         AXUIElementSetMessagingTimeout(systemWideElement, 0.035)
+        AXUIElementSetMessagingTimeout(backspaceAXElement, 0.025)
         isSessionOnConsole = (CGSessionCopyCurrentDictionary() as? [String: Any])?[kCGSessionOnConsoleKey as String] as? Bool ?? true
         let initialBundle = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""
         frontmostBundleID = initialBundle
@@ -452,6 +456,8 @@ public final class EventTapManager: ObservableObject {
 
     public func resetEngine() {
         engine.reset(clearHistory: true)
+        lastNonBackspaceKeyAt = 0
+        lastReplacementAt = 0
         scheduleFocusRefreshPair()
     }
 
@@ -746,10 +752,25 @@ public final class EventTapManager: ObservableObject {
             return Unmanaged.passUnretained(event)
         }
 
-        // Handle Backspace (supports post-Space recovery & tone re-placement on coda deletion)
+        // Handle Backspace (supports post-Space recovery, inline-selection sync & tone re-placement)
         if keyCode == 51 {
             let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
             let targetBundle = activeTargetBundleID
+            if lastReplacementAt > 0 {
+                let expectsInlineAutocomplete = alwaysAutocompleteBundleIDs.contains(targetBundle) ||
+                    (browserBundleIDs.contains(targetBundle) && !cachedIsExplicitWebTextArea)
+                let minGap: CFAbsoluteTime = (!isRepeat && expectsInlineAutocomplete) ? 0.038 : 0.026
+                let elapsed = CFAbsoluteTimeGetCurrent() - lastReplacementAt
+                if elapsed >= 0 && elapsed < minGap {
+                    usleep(UInt32((minGap - elapsed) * 1_000_000))
+                }
+                lastReplacementAt = 0
+            }
+            let didSyncSelection = !isRepeat && syncActiveSelectionBeforeBackspaceIfNeeded(targetBundle: targetBundle)
+            lastNonBackspaceKeyAt = 0
+            if didSyncSelection {
+                return Unmanaged.passUnretained(event)
+            }
             let decomposeAcuteY = requiresDecomposedAcuteY(targetBundle)
             let previousLast = decomposeAcuteY ? engine.lastDisplayedCharacter : nil
             let previousDisplayed = decomposeAcuteY ? Array(engine.currentWord) : nil
@@ -812,6 +833,7 @@ public final class EventTapManager: ObservableObject {
 
         switch engine.processKey(char) {
         case .passThrough:
+            lastNonBackspaceKeyAt = CFAbsoluteTimeGetCurrent()
             return Unmanaged.passUnretained(event)
         case .replace(let backspaceCount, let text):
             let extraBS = decomposeAcuteY
@@ -868,6 +890,92 @@ public final class EventTapManager: ObservableObject {
             modifierMatchStartedAt = nil
             keyPressedDuringModifierHold = false
         }
+    }
+
+    private func syncActiveSelectionBeforeBackspaceIfNeeded(targetBundle: String) -> Bool {
+        guard isAccessibilityGranted,
+              !engine.currentWord.isEmpty,
+              !isTerminalOrPTYApp(targetBundle) else {
+            return false
+        }
+        // Avoid synchronous AX round-trips against our own process while inside an HID tap callback
+        let ownPID = ProcessInfo.processInfo.processIdentifier
+        if NSWorkspace.shared.frontmostApplication?.processIdentifier == ownPID {
+            return false
+        }
+
+        let expectsInlineAutocomplete = alwaysAutocompleteBundleIDs.contains(targetBundle) ||
+            (browserBundleIDs.contains(targetBundle) && !cachedIsExplicitWebTextArea)
+        if expectsInlineAutocomplete && lastNonBackspaceKeyAt > 0 {
+            let elapsed = CFAbsoluteTimeGetCurrent() - lastNonBackspaceKeyAt
+            if elapsed >= 0 && elapsed < 0.038 {
+                usleep(UInt32((0.038 - elapsed) * 1_000_000))
+            }
+        }
+
+        var focusedUIRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(backspaceAXElement, kAXFocusedUIElementAttribute as CFString, &focusedUIRef) == .success,
+              let focusedUIRef else {
+            return false
+        }
+        // swiftlint:disable:next force_cast
+        let uiElement = focusedUIRef as! AXUIElement
+        AXUIElementSetMessagingTimeout(uiElement, 0.025)
+
+        var rangeRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(uiElement, kAXSelectedTextRangeAttribute as CFString, &rangeRef) == .success,
+              let rangeRef else {
+            return false
+        }
+        var cfRange = CFRange(location: 0, length: 0)
+        // swiftlint:disable:next force_cast
+        guard AXValueGetValue(rangeRef as! AXValue, .cfRange, &cfRange), cfRange.length > 0 else {
+            return false
+        }
+
+        var valueRef: CFTypeRef?
+        if AXUIElementCopyAttributeValue(uiElement, kAXValueAttribute as CFString, &valueRef) == .success,
+           let value = valueRef as? String {
+            let clampedLoc = max(0, cfRange.location)
+            let prefixEnd = value.utf16.index(
+                value.utf16.startIndex,
+                offsetBy: clampedLoc,
+                limitedBy: value.utf16.endIndex
+            ) ?? value.utf16.endIndex
+            let prefix = String(value[..<prefixEnd])
+            let normalizedPrefix = prefix.precomposedStringWithCanonicalMapping
+
+            var trailingRev: [Character] = []
+            for ch in normalizedPrefix.reversed() {
+                if VietnameseTables.isWordCharacter(
+                    ch,
+                    inputMethod: engine.config.inputMethod,
+                    hasActiveWord: true,
+                    bracketShortcuts: engine.config.bracketShortcuts
+                ) {
+                    trailingRev.append(ch)
+                } else {
+                    break
+                }
+            }
+            let trailingWord = String(trailingRev.reversed())
+            if trailingWord == engine.currentWord {
+                return true
+            }
+            engine.resyncToDisplayedWord(trailingWord)
+            return true
+        }
+
+        var selectedRef: CFTypeRef?
+        if AXUIElementCopyAttributeValue(uiElement, kAXSelectedTextAttribute as CFString, &selectedRef) == .success,
+           let selectedText = selectedRef as? String,
+           !selectedText.isEmpty,
+           !engine.currentWord.hasSuffix(selectedText.precomposedStringWithCanonicalMapping) {
+            return true
+        }
+
+        engine.reset(clearHistory: true)
+        return true
     }
 
     private var activeTargetBundleID: String {
@@ -960,6 +1068,11 @@ public final class EventTapManager: ObservableObject {
             )
         }
         usleep(settleDelay)
+        if !text.isEmpty {
+            let now = CFAbsoluteTimeGetCurrent()
+            lastNonBackspaceKeyAt = now
+            lastReplacementAt = now
+        }
     }
 
     private func postSyntheticEvent(_ event: CGEvent, proxy: CGEventTapProxy?) {

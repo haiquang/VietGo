@@ -1087,6 +1087,22 @@ enum BrowserHostQAMain {
                 input: "hoafn\u{08} thanhf, toasn\u{08} ddieeuf\u{08}u vaf dduowcj ",
                 expected: "hòa thành, tóa điều và được ",
                 isChatSubmit: false
+            ),
+            BrowserQACase(
+                name: "R6_02_OmniboxAutocomplete_KhoongBackspaceToKh_RetypeKho",
+                selector: "#omnibox-input",
+                speed: fast140,
+                input: "khoong\u{08}\u{08}\u{08}\u{08}oo\u{08}\u{08}oong khooong\u{08}\u{08}\u{08}\u{08}oo ",
+                expected: "không khô ",
+                isChatSubmit: false
+            ),
+            BrowserQACase(
+                name: "R6_03_OnsetPrefixRecovery_AfterAutoRestoreAndRepeatBS",
+                selector: "#markdown-textarea",
+                speed: fast140,
+                input: "khooong\u{08}\u{08}\u{08}\u{08}oo khoongg\u{E008}\u{E008}\u{E008}\u{E008}\u{E008}oo nghoo\u{08}\u{08}ee gho\u{08}ee kar\u{08}\u{08}ee ces\u{08}\u{08}oo qoo\u{08}\u{08}uoocs giis\u{08}\u{08}wx ",
+                expected: "khô khô nghê ghê kê cô quốc giữ ",
+                isChatSubmit: false
             )
             // APPEND NEW ROUND CASES (`R6_XX_...`) BELOW THIS LINE
         ]

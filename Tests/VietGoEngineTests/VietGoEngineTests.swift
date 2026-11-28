@@ -1098,4 +1098,98 @@ final class VietGoEngineTests: XCTestCase {
             "hòa thành, tóa điều và được "
         )
     }
+
+    func testRound7KhoongBackspaceToKhAndOrthographicOnsetRecovery() {
+        // 1. Auto-restored `khooong` / typo `khoongg` / `khoonk` / `khou` -> BS back to `kh` / `kho` -> `oo` / `o` -> `khô` -> `không`
+        XCTAssertEqual(simulateTyping("khooong\u{08}\u{08}\u{08}\u{08}oo").output, "khô")
+        XCTAssertEqual(simulateTyping("khooong\u{08}\u{08}\u{08}\u{08}oo\u{08}oo").output, "khô")
+        XCTAssertEqual(simulateTyping("khooong\u{08}\u{08}\u{08}\u{08}oong ").output, "không ")
+        XCTAssertEqual(simulateTyping("khooong\u{08}\u{08}\u{08}o").output, "khô")
+        XCTAssertEqual(simulateTyping("khoonggg\u{08}\u{08}\u{08}\u{08}\u{08}\u{08}oo").output, "khô")
+        XCTAssertEqual(simulateTyping("khoonk\u{08}\u{08}\u{08}oo").output, "khô")
+        XCTAssertEqual(simulateTyping("khoob\u{08}\u{08}oo").output, "khô")
+        XCTAssertEqual(simulateTyping("khou\u{08}\u{08}oo").output, "khô")
+        XCTAssertEqual(simulateTyping("khb\u{08}oo").output, "khô")
+
+        // Held Backspace autorepeat (`allowToneReposition: false`) on `khoongg` -> `kh` -> `oo` -> `khô`
+        var heldEngine = VietInputEngine()
+        var heldScreen: [Character] = []
+        for ch in "khoongg" {
+            switch heldEngine.processKey(ch) {
+            case .passThrough: heldScreen.append(ch)
+            case .replace(let bs, let txt):
+                heldScreen.removeLast(min(bs, heldScreen.count))
+                heldScreen.append(contentsOf: txt)
+            }
+        }
+        XCTAssertEqual(String(heldScreen), "khoongg")
+        for _ in 0..<5 {
+            switch heldEngine.handleBackspace(allowToneReposition: false) {
+            case .passThrough: if !heldScreen.isEmpty { heldScreen.removeLast() }
+            case .replace(let bs, let txt):
+                heldScreen.removeLast(min(bs, heldScreen.count))
+                heldScreen.append(contentsOf: txt)
+            }
+        }
+        XCTAssertEqual(String(heldScreen), "kh")
+        for ch in "oong" {
+            switch heldEngine.processKey(ch) {
+            case .passThrough: heldScreen.append(ch)
+            case .replace(let bs, let txt):
+                heldScreen.removeLast(min(bs, heldScreen.count))
+                heldScreen.append(contentsOf: txt)
+            }
+        }
+        XCTAssertEqual(String(heldScreen), "không")
+
+        // Post-Space Backspace recovery after auto-restore
+        XCTAssertEqual(simulateTyping("khooong \u{08}\u{08}\u{08}\u{08}\u{08}oo ").output, "khô ")
+        XCTAssertEqual(simulateTyping("khoongg \u{08}\u{08}\u{08}\u{08}\u{08}\u{08}oo ").output, "khô ")
+
+        // VNI mode: `khoong` -> BS to `kh`/`kho` -> `o6` / `6` -> `khô`
+        let vniConfig = EngineConfig(inputMethod: .vni)
+        XCTAssertEqual(simulateTyping("khoong\u{08}\u{08}\u{08}\u{08}o6", config: vniConfig).output, "khô")
+        XCTAssertEqual(simulateTyping("khoong\u{08}\u{08}\u{08}6", config: vniConfig).output, "khô")
+
+        // 2. Analogous orthographic / double-tap escaped onset recoveries
+        let analogousCases: [(String, String)] = [
+            ("nghoo\u{08}\u{08}ee", "nghê"),
+            ("gho\u{08}ee", "ghê"),
+            ("kar\u{08}\u{08}ee", "kê"),
+            ("ces\u{08}\u{08}oo", "cô"),
+            ("qoo\u{08}\u{08}uoocs", "quốc"),
+            ("giis\u{08}\u{08}wx", "giữ"),
+            ("coffee\u{08}\u{08}\u{08}\u{08}\u{08}oo", "cô"),
+            ("truwowngg\u{08}\u{08}\u{08}\u{08}\u{08}uowngf", "trường")
+        ]
+        for (input, expected) in analogousCases {
+            XCTAssertEqual(simulateTyping(input).output, expected, "Failed onset recovery case: \(input)")
+        }
+
+        // 3. Partial English words with unapplied modifiers stay protected when editing tail
+        let englishTailSafety: [(String, String)] = [
+            ("tests\u{08}s ", "tests "),
+            ("less\u{08}s ", "less "),
+            ("refresh\u{08}h ", "refresh "),
+            ("was\u{08} ", "wa "),
+            ("worm\u{08}\u{08}rd ", "word "),
+            ("doesn't\u{08}t ", "doesn't ")
+        ]
+        for (input, expected) in englishTailSafety {
+            XCTAssertEqual(simulateTyping(input).output, expected, "Failed English tail safety: \(input)")
+        }
+
+        // 4. Direct selection resync API (`resyncToDisplayedWord`) for Omnibox autocomplete desync
+        var syncEngine = VietInputEngine()
+        for ch in "khoong" { _ = syncEngine.processKey(ch) }
+        syncEngine.resyncToDisplayedWord("kh")
+        XCTAssertEqual(syncEngine.currentWord, "kh")
+        for ch in "oo" { _ = syncEngine.processKey(ch) }
+        XCTAssertEqual(syncEngine.currentWord, "khô")
+        _ = syncEngine.processKey("n")
+        _ = syncEngine.processKey("g")
+        XCTAssertEqual(syncEngine.currentWord, "không")
+        syncEngine.resyncToDisplayedWord("")
+        XCTAssertEqual(syncEngine.currentWord, "")
+    }
 }

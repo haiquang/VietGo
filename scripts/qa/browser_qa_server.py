@@ -258,6 +258,7 @@ HTML_PAGE = r"""<!doctype html>
 
   <script>
     const suggestions = [
+      "không có gì thay đổi",
       "đà nẵng việt nam",
       "đánh giá sản phẩm",
       "thử nghiệm hệ thống",
@@ -274,7 +275,7 @@ HTML_PAGE = r"""<!doctype html>
         omniboxBadge.textContent = "suggestion: deleted";
         return;
       }
-      if (val.includes("\u202F") || val.endsWith(" ") || val.length < 2) {
+      if (val.includes("\u202F") || val.includes("\u3164") || val.endsWith(" ") || val.length < 2) {
         omniboxBadge.textContent = "suggestion: none";
         return;
       }
