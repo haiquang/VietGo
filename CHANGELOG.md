@@ -2,6 +2,14 @@
 
 Tóm tắt các tính năng mới và cải tiến qua từng phiên bản **VietGo** dành cho người dùng macOS.
 
+## [1.0.4] - 2026-11-28
+
+### Cải tiến & Sửa lỗi
+- **Đã sửa lỗi kẹt dấu sau khi xóa lùi về phụ âm đầu:** Khi gõ nhầm từ (như `khoong`, `khoongg`, `nghoo`, `gho`, `kar`, `qoo`...) rồi xóa lùi về lại âm đầu (`kh`, `ngh`, `gh`, `k`, `c`, `q`, `gi`, `tr`...) để gõ tiếp, giờ đây bạn luôn bỏ dấu lại bình thường ngay lập tức (ví dụ xóa về `kh` rồi gõ `khô`, `không` không còn bị kẹt thành `khoo`).
+- **Đã sửa lỗi lệch chữ khi nhấn Backspace trên thanh địa chỉ trình duyệt:** Khi thanh địa chỉ hoặc ô tìm kiếm đang bôi chọn phần gợi ý tự động phía sau từ vừa gõ, nhấn `Backspace` để xóa gợi ý hay sửa lại từ nay giữ đúng số ký tự thực tế trên màn hình, không còn làm hụt chữ hoặc kẹt dấu ở lần gõ tiếp theo.
+- **Gõ dấu mượt hơn, không còn nháy ký tự thừa:** Đã loại bỏ hiện tượng thoáng hiện ký tự lạ khi bỏ dấu trên trình duyệt, tăng độ nhạy phản hồi để con trỏ bám sát tốc độ gõ phím và nhận diện chính xác khi chuyển nhanh giữa các ô nhập bằng phím `Tab`.
+- **Bỏ dấu tự do và ổn định hơn cho các vần ghép đôi, ghép ba:** Cải thiện trải nghiệm gõ các từ như `điều`, `được`, `nhiều`, `tiếng`, `việt`, `trường`, `cuối`, `tuyền` giúp con trỏ tiến thẳng êm ái, hỗ trợ linh hoạt mọi thứ tự bỏ dấu quen tay (kể cả gõ dấu thanh trước dấu mũ/móc hoặc nhấn `Backspace` quay lại thêm dấu sau dấu cách).
+
 ## [1.0.3] - 2026-11-27
 
 ### Tính năng mới & Cải tiến
